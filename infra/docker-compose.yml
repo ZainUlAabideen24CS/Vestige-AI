@@ -1,0 +1,22 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "REMOVED_OLD_PASSWORD"
+    ports: ["1435:1433"]
+    volumes: [mssql:/var/opt/mssql]
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports: ["6333:6333"]
+    volumes: [qdrant:/qdrant/storage]
+
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/REMOVED_OLD_PASSWORD
+    ports: ["7474:7474", "7687:7687"]
+    volumes: [neo4j:/data]
+
+volumes: { mssql: , qdrant: , neo4j: }
