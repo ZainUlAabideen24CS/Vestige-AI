@@ -36,3 +36,18 @@ class ProjectOut(ProjectBase):
     client_id: int
     manager_id: int | None
     created_at: datetime
+
+
+class ProjectOutRestricted(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: str | None = None
+    status: str
+    tech_stack: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    client_id: int
+    manager_id: int | None = None
+    created_at: datetime

@@ -4,12 +4,18 @@ from app.core.deps import get_db, get_current_user, require_roles
 from app.models.project import Project
 from app.models.client import Client
 from app.models.user import User
-from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectOut
+from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectOut, ProjectOutRestricted
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-@router.get("", response_model=list[ProjectOut])
+def project_response(project: Project, user: User):
+    if user.role in ("admin", "manager"):
+        return ProjectOut.model_validate(project)
+    return ProjectOutRestricted.model_validate(project)
+
+
+@router.get("")
 def list_projects(
     q: str | None = Query(None),
     status: str | None = None,
@@ -26,15 +32,16 @@ def list_projects(
         query = query.filter(Project.status == status)
     if client_id:
         query = query.filter(Project.client_id == client_id)
-    return query.order_by(Project.created_at.desc()).offset(skip).limit(limit).all()
+    projects = query.order_by(Project.created_at.desc()).offset(skip).limit(limit).all()
+    return [project_response(p, user) for p in projects]
 
 
-@router.get("/{project_id}", response_model=ProjectOut)
+@router.get("/{project_id}")
 def get_project(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     project = db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return project
+    return project_response(project, user)
 
 
 @router.post("", response_model=ProjectOut, status_code=201)
