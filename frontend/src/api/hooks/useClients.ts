@@ -2,14 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../clients";
 import type { Client, Project } from "../../types";
 
-interface Params {
+interface ListParams {
   q?: string;
   status?: string;
   skip?: number;
   limit?: number;
 }
 
-export function useClients(params: Params) {
+export function useClients(params: ListParams) {
   return useQuery({
     queryKey: ["clients", params],
     queryFn: async () => {
@@ -27,6 +27,16 @@ export function useClient(id: number) {
       return res.data;
     },
     enabled: !!id,
+  });
+}
+
+export function useProjects(params: ListParams) {
+  return useQuery({
+    queryKey: ["projects", params],
+    queryFn: async () => {
+      const res = await api.get<Project[]>("/projects", { params });
+      return res.data;
+    },
   });
 }
 

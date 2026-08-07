@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Clients from "./pages/Clients";
 import ClientDetail from "./pages/ClientDetail";
+import Projects from "./pages/Projects";
 import RequireAuth from "./components/RequireAuth";
 
 export default function App() {
@@ -24,6 +25,15 @@ export default function App() {
           element={
             <RequireAuth>
               <ClientDetail />
+            </RequireAuth>
+          }
+        />
+
+        <Route
+          path="/projects"
+          element={
+            <RequireAuth>
+              <Projects />
             </RequireAuth>
           }
         />

@@ -3,7 +3,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 
 
-class ProjectBase(BaseModel):
+class ProjectBase(BaseModel): 
     name: str
     description: str | None = None
     status: str = "planning"
