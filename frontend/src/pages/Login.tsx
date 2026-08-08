@@ -9,7 +9,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  async function handleSubmit() {
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
     setError("");
     setLoading(true);
     try {
@@ -19,6 +20,19 @@ export default function Login() {
 
       const res = await api.post("/auth/login", body);
       localStorage.setItem("token", res.data.access_token);
+
+      if ("PasswordCredential" in window) {
+        try {
+          const cred = new (window as any).PasswordCredential({
+            id: email,
+            password: password,
+          });
+          await navigator.credentials.store(cred);
+        } catch {
+          // browser declined — not an error
+        }
+      }
+
       navigate("/clients");
     } catch {
       setError("Incorrect email or password");
@@ -33,31 +47,36 @@ export default function Login() {
         <h1 className="text-xl font-medium mb-1">Vestige AI</h1>
         <p className="text-sm text-slate-500 mb-6">Sign in to continue</p>
 
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full mb-3 px-3 py-2 border border-slate-300 rounded-lg text-sm"
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-          className="w-full mb-4 px-3 py-2 border border-slate-300 rounded-lg text-sm"
-        />
+        <form onSubmit={handleSubmit}>
+          <input
+            type="email"
+            name="username"
+            autoComplete="username"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full mb-3 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+          />
+          <input
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full mb-4 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+          />
 
-        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+          {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
 
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          className="w-full py-2 bg-slate-900 text-white rounded-lg text-sm disabled:opacity-50"
-        >
-          {loading ? "Signing in..." : "Sign in"}
-        </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-2 bg-slate-900 text-white rounded-lg text-sm disabled:opacity-50"
+          >
+            {loading ? "Signing in..." : "Sign in"}
+          </button>
+        </form>
       </div>
     </div>
   );

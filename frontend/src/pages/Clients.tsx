@@ -1,13 +1,22 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useClients } from "../api/hooks/useClients";
+import { useClients, useCreateClient } from "../api/hooks/useClients";
+import { useCurrentUser } from "../api/hooks/useCurrentUser";
+import Modal from "../components/Modal";
+import ClientForm from "../components/ClientForm";
 
 const PAGE_SIZE = 10;
 
 export default function Clients() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [showAdd, setShowAdd] = useState(false);
   const navigate = useNavigate();
+
+  const { data: me } = useCurrentUser();
+  const createClient = useCreateClient();
+
+  const canEdit = me?.role === "admin" || me?.role === "manager";
 
   const { data, isLoading, isError } = useClients({
     q: search || undefined,
@@ -24,12 +33,22 @@ export default function Clients() {
     <main className="p-8">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-medium">Clients</h2>
-        <input
-          placeholder="Search by company..."
-          value={search}
-          onChange={(e) => handleSearch(e.target.value)}
-          className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-64"
-        />
+        <div className="flex gap-3">
+          <input
+            placeholder="Search by company..."
+            value={search}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-64"
+          />
+          {canEdit && (
+            <button
+              onClick={() => setShowAdd(true)}
+              className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm whitespace-nowrap"
+            >
+              Add client
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -95,6 +114,17 @@ export default function Clients() {
           Next
         </button>
       </div>
+
+      <Modal open={showAdd} title="Add client" onClose={() => setShowAdd(false)}>
+        <ClientForm
+          submitting={createClient.isPending}
+          error={createClient.isError ? "Could not save. Check the fields and try again." : ""}
+          onSubmit={(data) =>
+            createClient.mutate(data, { onSuccess: () => setShowAdd(false) })
+          }
+          onCancel={() => setShowAdd(false)}
+        />
+      </Modal>
     </main>
   );
 }

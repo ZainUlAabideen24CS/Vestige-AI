@@ -3,6 +3,7 @@ import Login from "./pages/Login";
 import Clients from "./pages/Clients";
 import ClientDetail from "./pages/ClientDetail";
 import Projects from "./pages/Projects";
+import ProjectDetail from "./pages/ProjectDetail";
 import RequireAuth from "./components/RequireAuth";
 
 export default function App() {
@@ -34,6 +35,15 @@ export default function App() {
           element={
             <RequireAuth>
               <Projects />
+            </RequireAuth>
+          }
+        />
+
+        <Route
+          path="/projects/:id"
+          element={
+            <RequireAuth>
+              <ProjectDetail />
             </RequireAuth>
           }
         />
