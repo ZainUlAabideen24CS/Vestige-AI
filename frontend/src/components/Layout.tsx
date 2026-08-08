@@ -5,6 +5,8 @@ const nav = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/clients", label: "Clients" },
   { to: "/projects", label: "Projects" },
+  { to: "/ingest", label: "Ingest" },
+  { to: "/search", label: "Search" },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

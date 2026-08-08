@@ -4,7 +4,9 @@ import Clients from "./pages/Clients";
 import ClientDetail from "./pages/ClientDetail";
 import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
+import Ingest from "./pages/Ingest";
 import RequireAuth from "./components/RequireAuth";
+import Search from "./pages/Search";
 
 export default function App() {
   return (
@@ -47,6 +49,24 @@ export default function App() {
             </RequireAuth>
           }
         />
+
+        <Route
+          path="/ingest"
+          element={
+            <RequireAuth>
+              <Ingest />
+            </RequireAuth>
+          }
+        />
+
+        <Route
+  path="/search"
+  element={
+    <RequireAuth>
+      <Search />
+    </RequireAuth>
+  }
+/>
 
         <Route path="*" element={<Navigate to="/clients" replace />} />
       </Routes>

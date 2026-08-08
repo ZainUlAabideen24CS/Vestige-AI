@@ -34,3 +34,44 @@ export interface Project {
   manager_id: number | null;
   created_at: string;
 }
+
+export interface IngestionJob {
+  id: number;
+  job_type: string;
+  status: string;
+  progress: number;
+  document_id: number | null;
+  meeting_id: number | null;
+  created_by: number | null;
+  error_message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+}
+
+export interface Document {
+  id: number;
+  filename: string;
+  source_type: string;
+  project_id: number | null;
+  client_id: number | null;
+  uploaded_by: number | null;
+  summary: string | null;
+  chunk_count: number;
+  created_at: string;
+}
+
+export interface SearchHit {
+  text: string;
+  document_id: number | null;
+  chunk_index: number | null;
+  client_id: number | null;
+  project_id: number | null;
+  filename: string | null;
+  score: number;
+}
+
+export interface SearchResponse {
+  query: string;
+  hits: SearchHit[];
+}
