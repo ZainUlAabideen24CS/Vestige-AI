@@ -5,10 +5,12 @@ from app.models.user import User
 from app.models.document import Document
 from app.services.ai.embeddings import embed_query
 from app.services.memory.vector_store import search as vector_search
-from app.schemas.search import SearchHit, SearchResponse,AskRequest, AskResponse
+from app.schemas.search import SearchHit, SearchResponse, AskRequest, AskResponse
 from app.services.memory.retriever import answer_question
 
 router = APIRouter(prefix="/search", tags=["search"])
+
+MIN_SCORE = 0.55
 
 
 @router.get("", response_model=SearchResponse)
@@ -22,9 +24,9 @@ def semantic_search(
 ):
     vector = embed_query(q)
     raw = vector_search(vector, limit=limit, client_id=client_id, project_id=project_id)
-    raw = [r for r in raw if r["score"] >= 0.55]
+    raw = [r for r in raw if r["score"] >= MIN_SCORE]
 
-    doc_ids = {r["document_id"] for r in raw if r["document_id"]}
+    doc_ids = {r["document_id"] for r in raw if r["document_id"] and r["document_id"] > 0}
     filenames = {}
     if doc_ids:
         docs = db.query(Document).filter(Document.id.in_(doc_ids)).all()
@@ -37,13 +39,14 @@ def semantic_search(
             chunk_index=r["chunk_index"],
             client_id=r["client_id"],
             project_id=r["project_id"],
-            filename=filenames.get(r["document_id"]),
+            filename=filenames.get(r["document_id"]) or r.get("filename"),
             score=r["score"],
         )
         for r in raw
     ]
 
-    return SearchResponse(query=q, hits=hits)  
+    return SearchResponse(query=q, hits=hits)
+
 
 @router.post("/ask", response_model=AskResponse)
 def ask(
@@ -57,7 +60,7 @@ def ask(
         project_id=payload.project_id,
     )
 
-    doc_ids = {s["document_id"] for s in result["sources"] if s["document_id"]}
+    doc_ids = {s["document_id"] for s in result["sources"] if s["document_id"] and s["document_id"] > 0}
     filenames = {}
     if doc_ids:
         docs = db.query(Document).filter(Document.id.in_(doc_ids)).all()
@@ -70,7 +73,7 @@ def ask(
             chunk_index=s["chunk_index"],
             client_id=s["client_id"],
             project_id=s["project_id"],
-            filename=filenames.get(s["document_id"]),
+            filename=filenames.get(s["document_id"]) or s.get("filename"),
             score=s["score"],
         )
         for s in result["sources"]

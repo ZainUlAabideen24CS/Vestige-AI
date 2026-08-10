@@ -2,11 +2,11 @@ from app.services.ai.embeddings import embed_query
 from app.services.ai.llm import generate_answer
 from app.services.memory.vector_store import search
 
-MIN_SCORE = 0.35
+MIN_SCORE = 0.55
 
 
 def answer_question(question: str, client_id: int | None = None,
-                    project_id: int | None = None, top_k: int = 4) -> dict:
+                    project_id: int | None = None, top_k: int = 2) -> dict:
     vector = embed_query(question)
     hits = search(vector, limit=top_k, client_id=client_id, project_id=project_id)
 

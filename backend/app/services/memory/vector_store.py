@@ -76,6 +76,7 @@ def search(vector: list[float], limit: int = 5, client_id: int | None = None,
             "chunk_index": r.payload.get("chunk_index"),
             "client_id": r.payload.get("client_id"),
             "project_id": r.payload.get("project_id"),
+            "filename": r.payload.get("filename"),
             "score": r.score,
         }
         for r in results
