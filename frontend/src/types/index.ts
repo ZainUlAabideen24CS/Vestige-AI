@@ -75,3 +75,9 @@ export interface SearchResponse {
   query: string;
   hits: SearchHit[];
 }
+
+export interface AskResponse {
+  question: string;
+  answer: string;
+  sources: SearchHit[];
+}

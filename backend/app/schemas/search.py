@@ -14,3 +14,15 @@ class SearchHit(BaseModel):
 class SearchResponse(BaseModel):
     query: str
     hits: list[SearchHit]
+
+
+class AskRequest(BaseModel):
+    question: str
+    client_id: int | None = None
+    project_id: int | None = None
+
+
+class AskResponse(BaseModel):
+    question: str
+    answer: str
+    sources: list[SearchHit]

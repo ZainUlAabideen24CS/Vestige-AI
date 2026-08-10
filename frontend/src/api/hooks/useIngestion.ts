@@ -2,13 +2,27 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../clients";
 import type { IngestionJob, Document } from "../../types";
 import type { SearchResponse } from "../../types";
+import type { AskResponse } from "../../types";
+
+export function useAsk() {
+  return useMutation({
+    mutationFn: async (args: { question: string; clientId?: number }) => {
+      const res = await api.post<AskResponse>(
+        "/search/ask",
+        { question: args.question, client_id: args.clientId },
+        { timeout: 180000 }
+      );
+      return res.data;
+    },
+  });
+}
 
 export function useSearch(query: string, clientId?: number) {
   return useQuery({
     queryKey: ["search", query, clientId],
     queryFn: async () => {
       const res = await api.get<SearchResponse>("/search", {
-        params: { q: query, limit: 8, client_id: clientId },
+        params: { q: query, limit: 4, client_id: clientId },
       });
       return res.data;
     },
