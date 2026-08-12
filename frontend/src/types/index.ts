@@ -81,3 +81,17 @@ export interface AskResponse {
   answer: string;
   sources: SearchHit[];
 }
+
+export interface WorkLog {
+  id: number;
+  project_id: number;
+  user_id: number;
+  log_date: string;
+  summary: string;
+  hours: string | null;
+  technologies: string | null;
+  blockers: string | null;
+  user_name: string | null;
+  project_name: string | null;
+  created_at: string;
+}

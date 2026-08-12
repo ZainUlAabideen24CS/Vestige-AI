@@ -8,6 +8,7 @@ import Ingest from "./pages/Ingest";
 import RequireAuth from "./components/RequireAuth";
 import Search from "./pages/Search";
 import Dashboard from "./pages/Dashboard";
+import WorkLogs from "./pages/WorkLogs";
 
 export default function App() {
   return (
@@ -76,6 +77,15 @@ export default function App() {
       <Dashboard />
     </RequireAuth>
   }
+/>
+
+<Route 
+  path="/worklogs"
+  element={
+    <RequireAuth>
+      <WorkLogs />
+    </RequireAuth>
+  } 
 />
 
        <Route path="*" element={<Navigate to="/dashboard" replace />} />

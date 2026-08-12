@@ -7,6 +7,7 @@ const nav = [
   { to: "/projects", label: "Projects" },
   { to: "/ingest", label: "Ingest" },
   { to: "/search", label: "Search" },
+  { to: "/worklogs", label: "Work logs" },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

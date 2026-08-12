@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useProject, useUpdateProject, useClient } from "../api/hooks/useClients";
 import { useCurrentUser } from "../api/hooks/useCurrentUser";
+import { useWorkLogs } from "../api/hooks/useWorkLogs";
 import Modal from "../components/Modal";
 import ProjectForm from "../components/ProjectForm";
 
@@ -20,6 +21,7 @@ export default function ProjectDetail() {
   const { data: client } = useClient(project?.client_id ?? 0);
   const { data: me } = useCurrentUser();
   const updateProject = useUpdateProject(projectId);
+  const { data: logs } = useWorkLogs({ project_id: projectId, limit: 20 });
 
   const canEdit = me?.role === "admin" || me?.role === "manager";
   const canSeeBudget = canEdit;
@@ -98,11 +100,55 @@ export default function ProjectDetail() {
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        {["Deliveries", "Payments", "Work logs"].map((label) => (
-          <div key={label} className="bg-white border border-slate-200 rounded-xl p-5">
-            <h3 className="text-sm font-medium mb-1">{label}</h3>
-            <p className="text-sm text-slate-500">None yet.</p>
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <h3 className="text-sm font-medium mb-1">Deliveries</h3>
+          <p className="text-sm text-slate-500">None yet.</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <h3 className="text-sm font-medium mb-1">Payments</h3>
+          <p className="text-sm text-slate-500">None yet.</p>
+        </div>
+      </div>
+
+      <h2 className="text-lg font-medium mb-3">
+        Work logs{logs ? ` (${logs.length})` : ""}
+      </h2>
+
+      <div className="space-y-3">
+        {logs && logs.length === 0 && (
+          <div className="bg-white border border-slate-200 rounded-xl p-6">
+            <p className="text-sm text-slate-500">Nothing logged on this project yet.</p>
+          </div>
+        )}
+
+        {logs?.map((log) => (
+          <div key={log.id} className="bg-white border border-slate-200 rounded-xl p-5">
+            <div className="mb-2">
+              <p className="text-sm font-medium">{log.user_name ?? "Unknown"}</p>
+              <p className="text-xs text-slate-500">
+                {log.log_date}
+                {log.hours && ` · ${Number(log.hours)}h`}
+              </p>
+            </div>
+
+            <p className="text-sm text-slate-700 mb-3">{log.summary}</p>
+
+            {log.technologies && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {log.technologies.split(",").map((t) => (
+                  <span key={t} className="px-2 py-0.5 bg-slate-100 rounded text-xs text-slate-600">
+                    {t.trim()}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {log.blockers && (
+              <p className="text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
+                Blocked: {log.blockers}
+              </p>
+            )}
           </div>
         ))}
       </div>
