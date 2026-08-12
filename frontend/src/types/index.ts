@@ -95,3 +95,26 @@ export interface WorkLog {
   project_name: string | null;
   created_at: string;
 }
+
+export interface Delivery {
+  id: number;
+  project_id: number;
+  title: string;
+  description: string | null;
+  status: string;
+  due_date: string | null;
+  delivered_at: string | null;
+  created_at: string;
+}
+
+export interface Payment {
+  id: number;
+  project_id: number;
+  amount: string;
+  currency: string;
+  status: string;
+  due_date: string | null;
+  invoice_number: string | null;
+  paid_at: string | null;
+  created_at: string;
+}

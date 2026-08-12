@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { useProject, useUpdateProject, useClient } from "../api/hooks/useClients";
 import { useCurrentUser } from "../api/hooks/useCurrentUser";
 import { useWorkLogs } from "../api/hooks/useWorkLogs";
+import { useDeliveries, usePayments } from "../api/hooks/useProjectDetail";
 import Modal from "../components/Modal";
 import ProjectForm from "../components/ProjectForm";
 
@@ -17,14 +18,16 @@ export default function ProjectDetail() {
   const projectId = Number(id);
   const [showEdit, setShowEdit] = useState(false);
 
-  const { data: project, isLoading, isError } = useProject(projectId);
-  const { data: client } = useClient(project?.client_id ?? 0);
   const { data: me } = useCurrentUser();
-  const updateProject = useUpdateProject(projectId);
-  const { data: logs } = useWorkLogs({ project_id: projectId, limit: 20 });
-
   const canEdit = me?.role === "admin" || me?.role === "manager";
   const canSeeBudget = canEdit;
+
+  const { data: project, isLoading, isError } = useProject(projectId);
+  const { data: client } = useClient(project?.client_id ?? 0);
+  const updateProject = useUpdateProject(projectId);
+  const { data: logs } = useWorkLogs({ project_id: projectId, limit: 20 });
+  const { data: deliveries } = useDeliveries(projectId);
+  const { data: payments } = usePayments(projectId, canEdit);
 
   if (isLoading) return <p className="p-8 text-sm text-slate-500">Loading...</p>;
   if (isError || !project)
@@ -102,13 +105,73 @@ export default function ProjectDetail() {
 
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <h3 className="text-sm font-medium mb-1">Deliveries</h3>
-          <p className="text-sm text-slate-500">None yet.</p>
+          <h3 className="text-sm font-medium mb-3">
+            Deliveries{deliveries ? ` (${deliveries.length})` : ""}
+          </h3>
+          {deliveries && deliveries.length === 0 && (
+            <p className="text-sm text-slate-500">None yet.</p>
+          )}
+          <div className="space-y-2">
+            {deliveries?.map((d) => (
+              <div key={d.id} className="flex justify-between items-center text-sm">
+                <div>
+                  <p>{d.title}</p>
+                  <p className="text-xs text-slate-500">
+                    {d.due_date ? `Due ${d.due_date}` : "No due date"}
+                  </p>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs ${
+                    d.status === "accepted" || d.status === "delivered"
+                      ? "bg-green-100 text-green-800"
+                      : d.status === "in_progress"
+                      ? "bg-blue-100 text-blue-800"
+                      : "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  {d.status}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <h3 className="text-sm font-medium mb-1">Payments</h3>
-          <p className="text-sm text-slate-500">None yet.</p>
-        </div>
+
+        {canEdit && (
+          <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <h3 className="text-sm font-medium mb-3">
+              Payments{payments ? ` (${payments.length})` : ""}
+            </h3>
+            {payments && payments.length === 0 && (
+              <p className="text-sm text-slate-500">None yet.</p>
+            )}
+            <div className="space-y-2">
+              {payments?.map((p) => (
+                <div key={p.id} className="flex justify-between items-center text-sm">
+                  <div>
+                    <p>
+                      {p.currency} {Number(p.amount).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {p.invoice_number ?? "No invoice"}
+                      {p.due_date && ` · due ${p.due_date}`}
+                    </p>
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs ${
+                      p.status === "paid"
+                        ? "bg-green-100 text-green-800"
+                        : p.status === "overdue"
+                        ? "bg-red-100 text-red-800"
+                        : "bg-amber-100 text-amber-800"
+                    }`}
+                  >
+                    {p.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <h2 className="text-lg font-medium mb-3">

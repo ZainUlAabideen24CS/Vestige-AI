@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "../api/hooks/useCurrentUser";
 
 const nav = [
@@ -13,9 +14,11 @@ const nav = [
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { data: me } = useCurrentUser();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   function signOut() {
     localStorage.removeItem("token");
+    queryClient.clear();
     navigate("/login");
   }
 
