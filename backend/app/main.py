@@ -3,7 +3,8 @@ from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.session import engine
-from app.routes import auth, clients, projects, ingest, search, dashboard,worklogs 
+from app.routes import auth, clients, projects, ingest, search, dashboard,worklogs,deliveries
+
 
 app = FastAPI(title="Vestige AI")
 
@@ -29,6 +30,7 @@ app.include_router(ingest.router)
 app.include_router(search.router)
 app.include_router(dashboard.router)
 app.include_router(worklogs.router)
+app.include_router(deliveries.router)
 
 
 @app.get("/health")
