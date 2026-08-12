@@ -10,6 +10,13 @@ interface Stats {
   meetings: number;
   chunks: number;
   recent_projects: { id: number; name: string; status: string; client_id: number }[];
+  recent_logs: {
+    id: number;
+    user_name: string | null;
+    summary: string;
+    log_date: string;
+    technologies: string | null;
+  }[];
 }
 
 export function useDashboard() {
