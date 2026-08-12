@@ -1,0 +1,115 @@
+Project: Horizon Textiles — Warehouse Management System
+Internal engineering sync, recorded and transcribed
+Attendees: Usman Tariq (PM), Ayesha Khan (Tech Lead), Bilal Ahmed (Backend), Sana Malik (Frontend)
+
+---
+
+USMAN: Let's start with authentication since that's been open for two weeks. Ayesha, where did we land?
+
+AYESHA: We're building it ourselves. We evaluated three options — Auth0, Keycloak, and rolling our own JWT layer. Auth0 was the fastest to integrate but their pricing tier jumps at five hundred monthly active users and Horizon expects around eight hundred warehouse staff by year two. That would have been roughly forty thousand rupees a month recurring, which the client refused outright.
+
+BILAL: Keycloak was the other realistic option. It's free and self-hosted, which fits their constraint.
+
+AYESHA: It does, but it needs its own database, its own container, and someone who understands realm configuration. Horizon has no dedicated IT staff beyond one systems administrator who mostly handles their ERP. We'd be handing them something they can't maintain after we leave.
+
+USMAN: So custom JWT.
+
+AYESHA: Custom JWT with bcrypt password hashing and role-based access control in the application layer. It's less flexible than Keycloak but it's one less service to run and one less thing to explain in the handover documentation. Bilal has it working already.
+
+BILAL: Login, token refresh, and four roles — admin, supervisor, operator, and viewer. Tokens expire after sixty minutes. There's no refresh token yet, so users get logged out after an hour. We should decide whether that's acceptable.
+
+SANA: For warehouse staff on a shared terminal, an hour is probably fine. Maybe even good. But supervisors doing inventory reconciliation will hate it — that's a two-hour job and they'd lose their session mid-count.
+
+USMAN: Add refresh tokens then. Put it in the next sprint, not this one.
+
+---
+
+USMAN: Hosting. This has been going back and forth with their side.
+
+BILAL: Their systems administrator wants everything on premises. They have a server room at the Faisalabad facility with two physical machines, one of which is already running their ERP.
+
+AYESHA: I pushed back on that. The second machine is a 2018 Dell with eight gigabytes of RAM and no redundancy. If it fails, the warehouse stops. They have no backup power beyond a UPS that gives them about twenty minutes.
+
+USMAN: What did they say?
+
+AYESHA: Their finance director sided with us actually. He'd had a bad experience with a hardware failure at a previous company. So we're going with a cloud VPS — DigitalOcean, Singapore region, because latency from Pakistan is better than Frankfurt or New York. Four gigabytes of RAM to start, which we can scale.
+
+BILAL: One thing worth recording. Their systems administrator, Kamran, is still not happy about it. He's cooperative but he doesn't trust cloud hosting. If anything goes wrong in the first month he will point at that decision. We should over-communicate uptime during the pilot.
+
+USMAN: Noted. Sana, does anything change for the frontend?
+
+SANA: No. We were building against an API either way.
+
+---
+
+USMAN: The barcode scanning issue. Bilal, I know this ate most of last week.
+
+BILAL: It did. The handheld scanners they bought are Zebra TC21 units running Android. They emulate a keyboard — when you scan a barcode, the device types the characters and then sends an Enter keystroke. That works fine in a normal text field.
+
+SANA: The problem is our stock entry screen has multiple fields and the Enter key was submitting the form before the operator finished the row.
+
+BILAL: Right. An operator scans the item barcode, the form submits with empty quantity and location, and we get a garbage record. It happened about forty times during their pilot day before anyone reported it.
+
+AYESHA: How did we fix it?
+
+SANA: We intercept the Enter key on that specific form and move focus to the next field instead of submitting. Submission now requires an explicit button press or a specific key combination. It's a bit unusual as interface behaviour, but it matches how the hardware actually works.
+
+BILAL: We also added validation so a stock entry without a quantity is rejected at the API level, not just in the UI. That's the real protection. If someone integrates with our API later and doesn't know about the scanner quirk, the database still stays clean.
+
+USMAN: Did we clean up the forty bad records?
+
+BILAL: Yes, deleted them manually. They were all from the pilot day and easy to identify because quantity was null.
+
+---
+
+USMAN: The scope conversation. This is the uncomfortable part.
+
+AYESHA: Their operations manager asked for a mobile app in the second week. Not in the contract, not in the SRS, not discussed during scoping.
+
+USMAN: What was the framing?
+
+AYESHA: That warehouse staff would prefer phones to the handheld scanners. Which might be true, but a native mobile app is six to eight weeks of work we haven't budgeted, and it duplicates functionality that already exists in the web interface.
+
+SANA: The web interface is responsive. It works on a phone browser. I showed him on my own phone and he seemed satisfied.
+
+AYESHA: For now. But I want it recorded that we said no to a native app, and why. If this comes back in three months as "you agreed to mobile", we need the paper trail.
+
+USMAN: Agreed. I'll send a written summary to their side today. The position is: the web interface is mobile-responsive and works in a phone browser, a native app is out of scope for this contract, and we're happy to quote separately for it if they want it later.
+
+BILAL: One thing that would help — if we're serious about phone use, we should test the barcode scanning through a phone camera. That's a different code path from the handheld scanners and I don't think anyone has tried it.
+
+SANA: I'll test it this week.
+
+---
+
+USMAN: Last item. Handover and knowledge risk.
+
+AYESHA: This is the one that worries me. Bilal has been the only person touching the authentication code and the scanner integration. If he moves to another project, we lose both.
+
+BILAL: The scanner thing especially. That fix looks arbitrary if you don't know the hardware behaviour behind it. Someone will read that code in six months and think it's a bug.
+
+AYESHA: So write it down. Not just a code comment — a short technical note explaining the Zebra keyboard emulation behaviour, why the Enter key is intercepted, and why the API validation exists as a second layer.
+
+USMAN: Where does it go?
+
+AYESHA: Repository docs folder for now. Ideally somewhere searchable across projects, because this same scanner model will come up again — three of our other clients use Zebra handhelds.
+
+BILAL: That's exactly the sort of thing that gets lost. I know we solved a similar timeout issue on the Acme project last year and I could not tell you what the fix was or who did it.
+
+USMAN: Fair. Let's at least be disciplined about it here. Bilal writes the scanner note this week, Ayesha writes up the authentication decision including why we rejected Auth0 and Keycloak, and I'll document the hosting decision and the scope refusal.
+
+AYESHA: One more. Kamran on their side is a single point of failure too. He's the only person at Horizon who knows their ERP schema, and our dispatch sync depends on it. If he leaves, we're stuck.
+
+USMAN: Can we get the schema documented?
+
+AYESHA: I'll ask. He might be reluctant — it's job security for him. Worth trying diplomatically rather than through the finance director.
+
+USMAN: Do that. Anything else?
+
+SANA: The demo date. Are we still targeting the twenty-eighth?
+
+USMAN: Yes, but demo scope is inventory and stock entry only. Dispatch sync is not ready and I don't want to show something half-working to their board.
+
+AYESHA: Agreed. Showing three things that work beats six things that mostly work.
+
+USMAN: That's a wrap. Notes go out this afternoon.

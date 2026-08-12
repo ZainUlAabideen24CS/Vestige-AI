@@ -92,6 +92,9 @@ export default function Search() {
         <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
           <p className="text-xs text-slate-500 mb-2">Answer</p>
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{ask.data.answer}</p>
+          <p className="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-100">
+            Generated from the sources below. Check them to verify.
+          </p>
         </div>
       )}
 
@@ -111,8 +114,11 @@ export default function Search() {
                     {hit.filename ?? "Unknown file"}
                     {hit.chunk_index !== null && ` · chunk ${hit.chunk_index}`}
                   </span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${scoreColor(hit.score)}`}>
-                    {(hit.score * 100).toFixed(0)}% match
+                  <span
+                    title="How closely this passage matches the question overall — not a confidence score for the answer"
+                    className={`px-2 py-0.5 rounded-full text-xs ${scoreColor(hit.score)}`}
+                  >
+                    {(hit.score * 100).toFixed(0)}% similar
                   </span>
                 </div>
                 <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">

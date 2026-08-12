@@ -21,9 +21,10 @@ from app.models.client import Client
 from app.models.meeting import Meeting
 from app.schemas.ingestion import IngestionJobOut, DocumentOut
 from app.services.jobs import process_document, process_meeting
+from app.services.memory.vector_store import delete_document_chunks
 
 
-AUDIO_ALLOWED = {".mp3", ".mp4" , ".wav", ".m4a", ".ogg", ".flac"}
+AUDIO_ALLOWED = {".mp3", ".mp4", ".wav", ".m4a", ".ogg", ".flac"}
 ALLOWED = {".txt", ".md", ".csv", ".json"}
 
 router = APIRouter(prefix="/ingest", tags=["ingestion"])
@@ -59,6 +60,28 @@ async def upload(
 
     stored_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
     stored_path.write_bytes(await file.read())
+
+    # If the same filename was already ingested for this client/project,
+    # remove the old document, its ingestion jobs, and its Qdrant chunks.
+    existing = (
+        db.query(Document)
+        .filter(
+            Document.filename == (file.filename or stored_path.name),
+            Document.client_id == client_id,
+            Document.project_id == project_id,
+        )
+        .first()
+    )
+
+    if existing:
+        db.query(IngestionJob).filter(
+            IngestionJob.document_id == existing.id
+        ).delete()
+
+        delete_document_chunks(existing.id)
+
+        db.delete(existing)
+        db.commit()
 
     doc = Document(
         filename=file.filename or stored_path.name,
@@ -117,6 +140,29 @@ async def upload_audio(
 
     stored_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
     stored_path.write_bytes(await file.read())
+
+    # If the same meeting title already exists for this client/project,
+    # remove the old meeting, jobs, and Qdrant chunks.
+    existing = (
+        db.query(Meeting)
+        .filter(
+            Meeting.title == title,
+            Meeting.client_id == client_id,
+            Meeting.project_id == project_id,
+        )
+        .first()
+    )
+
+    if existing:
+        db.query(IngestionJob).filter(
+            IngestionJob.meeting_id == existing.id
+        ).delete()
+
+        # Meetings are stored in Qdrant using negative IDs.
+        delete_document_chunks(-existing.id)
+
+        db.delete(existing)
+        db.commit()
 
     meeting = Meeting(
         title=title,

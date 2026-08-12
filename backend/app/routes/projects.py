@@ -6,6 +6,7 @@ from app.models.client import Client
 from app.models.user import User
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectOut, ProjectOutRestricted
 
+
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
@@ -32,6 +33,9 @@ def list_projects(
         query = query.filter(Project.status == status)
     if client_id:
         query = query.filter(Project.client_id == client_id)
+
+   
+
     projects = query.order_by(Project.created_at.desc()).offset(skip).limit(limit).all()
     return [project_response(p, user) for p in projects]
 
@@ -67,11 +71,12 @@ def update_project(
     project_id: int,
     payload: ProjectUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin", "manager")),
+    user: User = Depends(get_current_user),
 ):
     project = db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    
 
     data = payload.model_dump(exclude_unset=True)
     if data.get("manager_id") is not None and not db.get(User, data["manager_id"]):

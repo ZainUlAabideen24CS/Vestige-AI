@@ -39,7 +39,11 @@ def create_client(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("admin", "manager")),
 ):
-    client = Client(**payload.model_dump())
+    data = payload.model_dump()
+    if data.get("account_manager_id") is None and user.role == "manager":
+        data["account_manager_id"] = user.id
+
+    client = Client(**data)
     db.add(client)
     db.commit()
     db.refresh(client)

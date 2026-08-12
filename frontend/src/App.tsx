@@ -7,6 +7,7 @@ import ProjectDetail from "./pages/ProjectDetail";
 import Ingest from "./pages/Ingest";
 import RequireAuth from "./components/RequireAuth";
 import Search from "./pages/Search";
+import Dashboard from "./pages/Dashboard";
 
 export default function App() {
   return (
@@ -68,7 +69,16 @@ export default function App() {
   }
 />
 
-        <Route path="*" element={<Navigate to="/clients" replace />} />
+<Route
+  path="/dashboard"
+  element={
+    <RequireAuth>
+      <Dashboard />
+    </RequireAuth>
+  }
+/>
+
+       <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
   );
