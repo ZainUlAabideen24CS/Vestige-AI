@@ -40,24 +40,18 @@ def project_response(
     user: User,
 ):
     """
-    Return the appropriate project response.
+    Admin and actual project manager receive
+    the full project response.
 
-    Admins and the actual manager of a project
-    receive the full project response.
-
-    Other users receive the restricted response.
+    Other accessible users receive restricted response.
     """
 
-    # Admin sees full project information.
     if user.role == "admin":
         return ProjectOut.model_validate(project)
 
-    # Actual manager of this specific project
-    # sees full project information.
     if project.manager_id == user.id:
         return ProjectOut.model_validate(project)
 
-    # Other users get restricted information.
     return ProjectOutRestricted.model_validate(project)
 
 
@@ -77,34 +71,36 @@ def list_projects(
 ):
     query = db.query(Project)
 
-    # Search by project name.
+    # Search
     if q:
         query = query.filter(
-            Project.name.ilike(f"%{q}%")
+            Project.name.ilike(
+                f"%{q}%"
+            )
         )
 
-    # Filter by status.
+    # Status
     if status:
         query = query.filter(
             Project.status == status
         )
 
-    # Filter by client.
+    # Client
     if client_id:
         query = query.filter(
             Project.client_id == client_id
         )
 
-    # ---------------------------------------------------------
-    # Permission filtering
-    # ---------------------------------------------------------
+    # ========================================================
+    # ACCESS CONTROL
+    # ========================================================
 
     allowed = accessible_project_ids(
         db,
         user,
     )
 
-    # None means unrestricted access.
+    # None = admin/unrestricted.
     if allowed is not None:
 
         if not allowed:
@@ -114,20 +110,25 @@ def list_projects(
             Project.id.in_(allowed)
         )
 
-    # ---------------------------------------------------------
-    # Fetch projects
-    # ---------------------------------------------------------
+    # ========================================================
+    # FETCH
+    # ========================================================
 
     projects = (
         query
-        .order_by(Project.created_at.desc())
+        .order_by(
+            Project.created_at.desc()
+        )
         .offset(skip)
         .limit(limit)
         .all()
     )
 
     return [
-        project_response(project, user)
+        project_response(
+            project,
+            user,
+        )
         for project in projects
     ]
 
@@ -153,7 +154,6 @@ def get_project(
             detail="Project not found",
         )
 
-    # Permission check.
     if not can_access_project(
         db,
         user,
@@ -183,12 +183,15 @@ def create_project(
     payload: ProjectCreate,
     db: Session = Depends(get_db),
     user: User = Depends(
-        require_roles("admin", "manager")
+        require_roles(
+            "admin",
+            "manager",
+        )
     ),
 ):
-    # ---------------------------------------------------------
-    # Validate client
-    # ---------------------------------------------------------
+    # ========================================================
+    # CLIENT VALIDATION
+    # ========================================================
 
     if not db.get(
         Client,
@@ -199,15 +202,29 @@ def create_project(
             detail="Client not found",
         )
 
-    # ---------------------------------------------------------
-    # Validate manager
-    # ---------------------------------------------------------
+    # ========================================================
+    # MANAGER
+    # ========================================================
 
-    if payload.manager_id is not None:
+    data = payload.model_dump()
+
+    manager_id = data.get(
+        "manager_id"
+    )
+
+    # If a manager creates a project and does not
+    # select another manager, make the current user
+    # the manager automatically.
+    if user.role == "manager" and manager_id is None:
+        manager_id = user.id
+        data["manager_id"] = user.id
+
+    # Validate selected manager.
+    if manager_id is not None:
 
         manager = db.get(
             User,
-            payload.manager_id,
+            manager_id,
         )
 
         if not manager:
@@ -222,12 +239,12 @@ def create_project(
                 detail="Selected user is not a manager",
             )
 
-    # ---------------------------------------------------------
-    # Create project
-    # ---------------------------------------------------------
+    # ========================================================
+    # CREATE
+    # ========================================================
 
     project = Project(
-        **payload.model_dump()
+        **data
     )
 
     db.add(project)
@@ -262,10 +279,6 @@ def update_project(
             detail="Project not found",
         )
 
-    # ---------------------------------------------------------
-    # Permission
-    # ---------------------------------------------------------
-
     if not can_edit_project(
         db,
         user,
@@ -276,19 +289,18 @@ def update_project(
             detail="Not permitted to edit this project",
         )
 
-    # ---------------------------------------------------------
-    # Prepare update data
-    # ---------------------------------------------------------
-
     data = payload.model_dump(
         exclude_unset=True
     )
 
-    # ---------------------------------------------------------
-    # Validate manager if manager_id is being changed
-    # ---------------------------------------------------------
+    # ========================================================
+    # MANAGER VALIDATION
+    # ========================================================
 
-    if data.get("manager_id") is not None:
+    if (
+        "manager_id" in data
+        and data["manager_id"] is not None
+    ):
 
         manager = db.get(
             User,
@@ -307,9 +319,9 @@ def update_project(
                 detail="Selected user is not a manager",
             )
 
-    # ---------------------------------------------------------
-    # Apply changes
-    # ---------------------------------------------------------
+    # ========================================================
+    # APPLY
+    # ========================================================
 
     for field, value in data.items():
         setattr(

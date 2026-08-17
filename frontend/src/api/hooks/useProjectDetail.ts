@@ -17,17 +17,28 @@ import type {
 // DELIVERIES
 // ============================================================
 
-export function useDeliveries(projectId: number) {
+export function useDeliveries(
+  projectId: number
+) {
+
   return useQuery({
-    queryKey: ["deliveries", projectId],
+    queryKey: [
+      "deliveries",
+      projectId,
+    ],
 
     queryFn: async () => {
-      const res = await api.get<Delivery[]>("/deliveries", {
-        params: {
-          project_id: projectId,
-          limit: 50,
-        },
-      });
+
+      const res =
+        await api.get<Delivery[]>(
+          "/deliveries",
+          {
+            params: {
+              project_id: projectId,
+              limit: 50,
+            },
+          }
+        );
 
       return res.data;
     },
@@ -46,48 +57,68 @@ export interface DeliveryInput {
 }
 
 
-export function useCreateDelivery(projectId: number) {
-  const qc = useQueryClient();
+export function useCreateDelivery(
+  projectId: number
+) {
+
+  const qc =
+    useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: DeliveryInput) =>
-      (
-        await api.post(
-          "/deliveries",
-          input
-        )
-      ).data,
+
+    mutationFn: async (
+      input: DeliveryInput
+    ) => (
+      await api.post(
+        "/deliveries",
+        input
+      )
+    ).data,
 
     onSuccess: () => {
+
       qc.invalidateQueries({
-        queryKey: ["deliveries", projectId],
+        queryKey: [
+          "deliveries",
+          projectId,
+        ],
       });
     },
   });
 }
 
 
-export function useUpdateDelivery(projectId: number) {
-  const qc = useQueryClient();
+export function useUpdateDelivery(
+  projectId: number
+) {
+
+  const qc =
+    useQueryClient();
 
   return useMutation({
+
     mutationFn: async ({
       id,
       status,
     }: {
       id: number;
       status: string;
-    }) =>
-      (
-        await api.patch(
-          `/deliveries/${id}`,
-          { status }
-        )
-      ).data,
+    }) => (
+      await api.patch(
+        `/deliveries/${id}`,
+        {
+          status,
+        }
+      )
+    ).data,
 
     onSuccess: () => {
+
       qc.invalidateQueries({
-        queryKey: ["deliveries", projectId],
+        queryKey: [
+          "deliveries",
+          projectId,
+        ],
       });
     },
   });
@@ -102,21 +133,32 @@ export function usePayments(
   projectId: number,
   enabled: boolean
 ) {
+
   return useQuery({
-    queryKey: ["payments", projectId],
+    queryKey: [
+      "payments",
+      projectId,
+    ],
 
     queryFn: async () => {
-      const res = await api.get<Payment[]>("/payments", {
-        params: {
-          project_id: projectId,
-          limit: 50,
-        },
-      });
+
+      const res =
+        await api.get<Payment[]>(
+          "/payments",
+          {
+            params: {
+              project_id: projectId,
+              limit: 50,
+            },
+          }
+        );
 
       return res.data;
     },
 
-    enabled: enabled && !!projectId,
+    enabled:
+      enabled &&
+      !!projectId,
   });
 }
 
@@ -131,48 +173,68 @@ export interface PaymentInput {
 }
 
 
-export function useCreatePayment(projectId: number) {
-  const qc = useQueryClient();
+export function useCreatePayment(
+  projectId: number
+) {
+
+  const qc =
+    useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: PaymentInput) =>
-      (
-        await api.post(
-          "/payments",
-          input
-        )
-      ).data,
+
+    mutationFn: async (
+      input: PaymentInput
+    ) => (
+      await api.post(
+        "/payments",
+        input
+      )
+    ).data,
 
     onSuccess: () => {
+
       qc.invalidateQueries({
-        queryKey: ["payments", projectId],
+        queryKey: [
+          "payments",
+          projectId,
+        ],
       });
     },
   });
 }
 
 
-export function useUpdatePayment(projectId: number) {
-  const qc = useQueryClient();
+export function useUpdatePayment(
+  projectId: number
+) {
+
+  const qc =
+    useQueryClient();
 
   return useMutation({
+
     mutationFn: async ({
       id,
       status,
     }: {
       id: number;
       status: string;
-    }) =>
-      (
-        await api.patch(
-          `/payments/${id}`,
-          { status }
-        )
-      ).data,
+    }) => (
+      await api.patch(
+        `/payments/${id}`,
+        {
+          status,
+        }
+      )
+    ).data,
 
     onSuccess: () => {
+
       qc.invalidateQueries({
-        queryKey: ["payments", projectId],
+        queryKey: [
+          "payments",
+          projectId,
+        ],
       });
     },
   });
@@ -191,14 +253,22 @@ export interface ProjectMembersResponse {
 }
 
 
-export function useProjectMembers(projectId: number) {
+export function useProjectMembers(
+  projectId: number
+) {
+
   return useQuery({
-    queryKey: ["project-members", projectId],
+    queryKey: [
+      "project-members",
+      projectId,
+    ],
 
     queryFn: async () => {
-      const res = await api.get<ProjectMembersResponse>(
-        `/projects/${projectId}/members`
-      );
+
+      const res =
+        await api.get<ProjectMembersResponse>(
+          `/projects/${projectId}/members`
+        );
 
       return res.data;
     },
@@ -212,23 +282,33 @@ export function useProjectMembers(projectId: number) {
 // ADD PROJECT MEMBER
 // ============================================================
 
-export function useAddProjectMember(projectId: number) {
-  const qc = useQueryClient();
+export function useAddProjectMember(
+  projectId: number
+) {
+
+  const qc =
+    useQueryClient();
 
   return useMutation({
-    mutationFn: async (userId: number) =>
-      (
-        await api.post(
-          `/projects/${projectId}/members`,
-          {
-            user_id: userId,
-          }
-        )
-      ).data,
+
+    mutationFn: async (
+      userId: number
+    ) => (
+      await api.post(
+        `/projects/${projectId}/members`,
+        {
+          user_id: userId,
+        }
+      )
+    ).data,
 
     onSuccess: () => {
+
       qc.invalidateQueries({
-        queryKey: ["project-members", projectId],
+        queryKey: [
+          "project-members",
+          projectId,
+        ],
       });
 
       qc.invalidateQueries({
@@ -243,20 +323,30 @@ export function useAddProjectMember(projectId: number) {
 // REMOVE PROJECT MEMBER
 // ============================================================
 
-export function useRemoveProjectMember(projectId: number) {
-  const qc = useQueryClient();
+export function useRemoveProjectMember(
+  projectId: number
+) {
+
+  const qc =
+    useQueryClient();
 
   return useMutation({
-    mutationFn: async (userId: number) =>
-      (
-        await api.delete(
-          `/projects/${projectId}/members/${userId}`
-        )
-      ).data,
+
+    mutationFn: async (
+      userId: number
+    ) => (
+      await api.delete(
+        `/projects/${projectId}/members/${userId}`
+      )
+    ).data,
 
     onSuccess: () => {
+
       qc.invalidateQueries({
-        queryKey: ["project-members", projectId],
+        queryKey: [
+          "project-members",
+          projectId,
+        ],
       });
 
       qc.invalidateQueries({

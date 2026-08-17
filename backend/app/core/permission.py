@@ -10,60 +10,88 @@ def accessible_project_ids(
     user: User,
 ) -> list[int] | None:
     """
-    Return the project IDs the user is allowed to access.
+    Return project IDs accessible by the current user.
 
-    Rules:
-        - admin:
-            Can access ALL projects.
+    Admin:
+        Access to every project.
 
-        - manager:
-            Can access:
-                1. Projects where they are the actual project manager.
-                2. Projects where they have an active project membership.
+    Manager:
+        Access to:
+        1. Projects where they are the actual manager.
+        2. Projects where they are an active member.
 
-        - employee:
-            Can access only projects where they have
-            an active project membership.
+    Employee:
+        Access only to projects where they are
+        an active member.
 
-    None means unrestricted access.
+    A removed member is NOT considered active.
     """
 
-    # Admin has unrestricted access.
+    # ========================================================
+    # ADMIN
+    # ========================================================
+
     if user.role == "admin":
         return None
 
-    project_ids: set[int] = set()
+    # ========================================================
+    # MANAGER
+    # ========================================================
 
-    # ---------------------------------------------------------
-    # Projects where the user is the actual project manager
-    # ---------------------------------------------------------
+    if user.role == "manager":
 
-    managed_projects = (
-        db.query(Project.id)
-        .filter(Project.manager_id == user.id)
-        .all()
-    )
+        # Projects where this user is the actual manager.
+        managed_project_ids = (
+            db.query(Project.id)
+            .filter(
+                Project.manager_id == user.id
+            )
+            .all()
+        )
 
-    project_ids.update(
-        row[0] for row in managed_projects
-    )
+        # Projects where this manager is also an active member.
+        member_project_ids = (
+            db.query(ProjectMember.project_id)
+            .filter(
+                ProjectMember.user_id == user.id
+            )
+            .filter(
+                ProjectMember.removed_at.is_(None)
+            )
+            .all()
+        )
 
-    # ---------------------------------------------------------
-    # Active project memberships
-    # ---------------------------------------------------------
+        project_ids = {
+            row[0]
+            for row in managed_project_ids
+        }
 
-    memberships = (
+        project_ids.update(
+            row[0]
+            for row in member_project_ids
+        )
+
+        return list(project_ids)
+
+    # ========================================================
+    # EMPLOYEE
+    # ========================================================
+
+    rows = (
         db.query(ProjectMember.project_id)
-        .filter(ProjectMember.user_id == user.id)
-        .filter(ProjectMember.removed_at.is_(None))
+        .filter(
+            ProjectMember.user_id == user.id
+        )
+        .filter(
+            ProjectMember.removed_at.is_(None)
+        )
         .all()
     )
 
-    project_ids.update(
-        row[0] for row in memberships
-    )
-
-    return list(project_ids)
+    return [
+        row[0]
+        for row in rows
+    ]
 
 
 def can_access_project(
@@ -72,39 +100,40 @@ def can_access_project(
     project_id: int,
 ) -> bool:
     """
-    Check whether a user can view/access a specific project.
-
-    Rules:
-        - admin -> every project
-        - project manager -> their project
-        - active project member -> their project
-        - everyone else -> denied
+    Check whether a user can access a specific project.
     """
 
     # Admin can access everything.
     if user.role == "admin":
         return True
 
-    project = db.get(Project, project_id)
+    project = db.get(
+        Project,
+        project_id,
+    )
 
     if not project:
         return False
 
-    # Actual manager of this project can access it,
-    # regardless of their global role.
+    # Actual project manager always has access.
     if project.manager_id == user.id:
         return True
 
-    # Active project member can access it.
-    membership = (
+    # Active project member has access.
+    return (
         db.query(ProjectMember)
-        .filter(ProjectMember.project_id == project_id)
-        .filter(ProjectMember.user_id == user.id)
-        .filter(ProjectMember.removed_at.is_(None))
+        .filter(
+            ProjectMember.project_id == project_id
+        )
+        .filter(
+            ProjectMember.user_id == user.id
+        )
+        .filter(
+            ProjectMember.removed_at.is_(None)
+        )
         .first()
+        is not None
     )
-
-    return membership is not None
 
 
 def can_edit_project(
@@ -113,25 +142,21 @@ def can_edit_project(
     project_id: int,
 ) -> bool:
     """
-    Check whether the user can edit a specific project.
-
-    Rules:
-        - admin -> can edit any project
-        - actual project manager -> can edit their project
-        - other managers -> cannot edit
-        - employees -> cannot edit
+    Only admin or the actual project manager
+    can edit project information.
     """
 
     if user.role == "admin":
         return True
 
-    project = db.get(Project, project_id)
+    project = db.get(
+        Project,
+        project_id,
+    )
 
     if not project:
         return False
 
-    # Only the actual manager of this project
-    # can edit it.
     return project.manager_id == user.id
 
 
@@ -141,24 +166,22 @@ def can_manage_project_members(
     project_id: int,
 ) -> bool:
     """
-    Check whether the user can ADD or REMOVE employees
-    from a specific project.
+    Only:
+        - admin
+        - actual manager of this project
 
-    Rules:
-        - admin -> any project
-        - actual project manager -> their project only
-        - everyone else -> denied
+    can add/remove project members.
     """
 
-    # Admin can manage members of every project.
     if user.role == "admin":
         return True
 
-    project = db.get(Project, project_id)
+    project = db.get(
+        Project,
+        project_id,
+    )
 
     if not project:
         return False
 
-    # Only the actual manager assigned to THIS project
-    # can manage its members.
     return project.manager_id == user.id

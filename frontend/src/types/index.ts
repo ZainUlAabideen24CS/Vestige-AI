@@ -12,6 +12,7 @@ export interface Client {
   created_at: string;
 }
 
+
 export interface User {
   id: number;
   email: string;
@@ -20,6 +21,7 @@ export interface User {
   is_active: boolean;
   created_at: string;
 }
+
 
 export interface Project {
   id: number;
@@ -35,6 +37,7 @@ export interface Project {
   created_at: string;
 }
 
+
 export interface ProjectMember {
   membership_id: number | null;
   user_id: number;
@@ -43,6 +46,8 @@ export interface ProjectMember {
   role_on_project: string;
   assigned_at: string | null;
 }
+
+
 export interface IngestionJob {
   id: number;
   job_type: string;
@@ -51,11 +56,16 @@ export interface IngestionJob {
   document_id: number | null;
   meeting_id: number | null;
   created_by: number | null;
+
+  // NEW
+  created_by_name: string | null;
+
   error_message: string | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
 }
+
 
 export interface Document {
   id: number;
@@ -64,10 +74,15 @@ export interface Document {
   project_id: number | null;
   client_id: number | null;
   uploaded_by: number | null;
+
+  // NEW
+  uploaded_by_name: string | null;
+
   summary: string | null;
   chunk_count: number;
   created_at: string;
 }
+
 
 export interface SearchHit {
   text: string;
@@ -79,16 +94,19 @@ export interface SearchHit {
   score: number;
 }
 
+
 export interface SearchResponse {
   query: string;
   hits: SearchHit[];
 }
+
 
 export interface AskResponse {
   question: string;
   answer: string;
   sources: SearchHit[];
 }
+
 
 export interface WorkLog {
   id: number;
@@ -104,6 +122,7 @@ export interface WorkLog {
   created_at: string;
 }
 
+
 export interface Delivery {
   id: number;
   project_id: number;
@@ -114,6 +133,7 @@ export interface Delivery {
   delivered_at: string | null;
   created_at: string;
 }
+
 
 export interface Payment {
   id: number;
