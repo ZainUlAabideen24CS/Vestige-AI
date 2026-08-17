@@ -35,6 +35,14 @@ export interface Project {
   created_at: string;
 }
 
+export interface ProjectMember {
+  membership_id: number | null;
+  user_id: number;
+  full_name: string;
+  email: string;
+  role_on_project: string;
+  assigned_at: string | null;
+}
 export interface IngestionJob {
   id: number;
   job_type: string;

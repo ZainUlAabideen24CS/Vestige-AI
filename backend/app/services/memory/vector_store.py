@@ -1,6 +1,14 @@
 import uuid
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
+from qdrant_client.models import (
+    Distance,
+    VectorParams,
+    PointStruct,
+    Filter,
+    FieldCondition,
+    MatchValue,
+    MatchAny,
+)
 from app.services.ai.embeddings import VECTOR_SIZE
 
 COLLECTION = "vestige_chunks"
@@ -52,8 +60,13 @@ def delete_document_chunks(document_id: int):
     )
 
 
-def search(vector: list[float], limit: int = 5, client_id: int | None = None,
-           project_id: int | None = None) -> list[dict]:
+def search(
+    vector: list[float],
+    limit: int = 5,
+    client_id: int | None = None,
+    project_id: int | None = None,
+    allowed_projects: list[int] | None = None,
+) -> list[dict]:
     client = get_client()
 
     conditions = []
@@ -61,6 +74,10 @@ def search(vector: list[float], limit: int = 5, client_id: int | None = None,
         conditions.append(FieldCondition(key="client_id", match=MatchValue(value=client_id)))
     if project_id:
         conditions.append(FieldCondition(key="project_id", match=MatchValue(value=project_id)))
+    if allowed_projects is not None:
+        conditions.append(
+            FieldCondition(key="project_id", match=MatchAny(any=allowed_projects))
+        )
 
     results = client.query_points(
         collection_name=COLLECTION,

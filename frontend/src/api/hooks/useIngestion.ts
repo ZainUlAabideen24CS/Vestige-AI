@@ -58,6 +58,8 @@ interface UploadArgs {
 export function useUpload() {
   const queryClient = useQueryClient();
 
+
+
   return useMutation({
     mutationFn: async ({ file, sourceType, projectId, clientId }: UploadArgs) => {
       const form = new FormData();
@@ -75,6 +77,34 @@ export function useUpload() {
     },
   });
 }
+
+interface UploadAudioArgs {
+  file: File;
+  title: string;
+  projectId?: number;
+  clientId?: number;
+}
+
+export function useUploadAudio() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ file, title, projectId, clientId }: UploadAudioArgs) => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("title", title);
+      if (projectId) form.append("project_id", String(projectId));
+      if (clientId) form.append("client_id", String(clientId));
+
+      const res = await api.post<IngestionJob>("/ingest/audio", form);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+  });
+} 
+
 export function useDocuments() {
   return useQuery({
     queryKey: ["documents"],

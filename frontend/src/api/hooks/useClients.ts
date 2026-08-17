@@ -143,3 +143,14 @@ export function useUpdateProject(id: number) {
     },
   });
 }
+
+export interface ClientInput {
+  company_name: string;
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  industry?: string;
+  status?: string;
+  notes?: string;
+  account_manager_id?: number;
+}

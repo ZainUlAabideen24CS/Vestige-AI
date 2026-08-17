@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ClientInput } from "../api/hooks/useClients";
+import { useUsers } from "../api/hooks/useUsers";
 
 interface Props {
   initial?: {
@@ -10,15 +11,23 @@ interface Props {
     industry?: string | null;
     status?: string;
     notes?: string | null;
+    account_manager_id?: number | null;
   };
   submitting: boolean;
   error: string;
   onSubmit: (data: ClientInput) => void;
   onCancel: () => void;
 }
+
 const field = "w-full px-3 py-2 border border-slate-300 rounded-lg text-sm";
 
 export default function ClientForm({ initial, submitting, error, onSubmit, onCancel }: Props) {
+  const { data: managers } = useUsers("manager");
+
+  const [accountManagerId, setAccountManagerId] = useState<string>(
+    String(initial?.account_manager_id ?? "")
+  );
+
   const [form, setForm] = useState<ClientInput>({
     company_name: initial?.company_name ?? "",
     contact_name: initial?.contact_name ?? "",
@@ -42,6 +51,7 @@ export default function ClientForm({ initial, submitting, error, onSubmit, onCan
       }
     );
     cleaned.status = form.status;
+    if (accountManagerId) cleaned.account_manager_id = Number(accountManagerId);
     onSubmit(cleaned);
   }
 
@@ -93,6 +103,22 @@ export default function ClientForm({ initial, submitting, error, onSubmit, onCan
             className={field}
           />
         </div>
+      </div>
+
+      <div>
+        <label className="text-xs text-slate-500 block mb-1">Account manager</label>
+        <select
+          value={accountManagerId}
+          onChange={(e) => setAccountManagerId(e.target.value)}
+          className={field}
+        >
+          <option value="">Unassigned</option>
+          {managers?.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.full_name}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div>

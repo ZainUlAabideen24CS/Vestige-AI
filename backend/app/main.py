@@ -3,7 +3,7 @@ from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.session import engine
-from app.routes import auth, clients, projects, ingest, search, dashboard,worklogs,deliveries,payments
+from app.routes import auth, clients, projects, ingest, search, dashboard,worklogs,deliveries,payments,users,project_members
 
 
 
@@ -33,7 +33,8 @@ app.include_router(dashboard.router)
 app.include_router(worklogs.router)
 app.include_router(deliveries.router)
 app.include_router(payments.router)
-
+app.include_router(users.router)
+app.include_router(project_members.router)
 
 @app.get("/health")
 def health():

@@ -19,9 +19,10 @@ def generate_answer(question: str, chunks: list[str]) -> str:
 
     context = "\n\n---\n\n".join(f"[Source {i + 1}]\n{c}" for i, c in enumerate(chunks))
 
+    print(f"[LLM] chunks={len(chunks)} | chars={sum(len(c) for c in chunks)}")
     prompt = f"""Context:
 
-{context}
+{context} 
 
 Question: {question}
 
@@ -33,7 +34,7 @@ Answer:"""
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
-        options={"temperature": 0.1, "num_predict": 150},
+        options={"temperature": 0.1, "num_predict": 80},
     )
 
     answer = response["message"]["content"].strip()
@@ -45,4 +46,4 @@ Answer:"""
             answer = answer.split(marker)[0].strip()
             break
 
-    return answer
+    return answer     

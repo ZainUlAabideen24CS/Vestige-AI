@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useClients, type ProjectInput } from "../api/hooks/useClients";
+import { useUsers } from "../api/hooks/useUsers";
 
 interface Props {
   initial?: {
@@ -11,6 +12,7 @@ interface Props {
     start_date?: string | null;
     end_date?: string | null;
     budget?: string | null;
+    manager_id?: number | null;
   };
   fixedClientId?: number;
   submitting: boolean;
@@ -30,11 +32,13 @@ export default function ProjectForm({
   onCancel,
 }: Props) {
   const { data: clients } = useClients({ limit: 100 });
+  const { data: managers } = useUsers("manager");
 
   const [name, setName] = useState(initial?.name ?? "");
   const [clientId, setClientId] = useState<string>(
     String(initial?.client_id ?? fixedClientId ?? "")
   );
+  const [managerId, setManagerId] = useState<string>(String(initial?.manager_id ?? ""));
   const [description, setDescription] = useState(initial?.description ?? "");
   const [status, setStatus] = useState(initial?.status ?? "planning");
   const [techStack, setTechStack] = useState(initial?.tech_stack ?? "");
@@ -48,6 +52,7 @@ export default function ProjectForm({
       client_id: Number(clientId),
       status,
     };
+    if (managerId) data.manager_id = Number(managerId);
     if (description.trim()) data.description = description.trim();
     if (techStack.trim()) data.tech_stack = techStack.trim();
     if (startDate) data.start_date = startDate;
@@ -83,6 +88,22 @@ export default function ProjectForm({
           </select>
         </div>
       )}
+
+      <div>
+        <label className="text-xs text-slate-500 block mb-1">Project manager</label>
+        <select
+          value={managerId}
+          onChange={(e) => setManagerId(e.target.value)}
+          className={field}
+        >
+          <option value="">Unassigned</option>
+          {managers?.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.full_name}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div>
         <label className="text-xs text-slate-500 block mb-1">Description</label>

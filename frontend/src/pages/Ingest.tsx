@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { useJobs, useDocuments, useUpload } from "../api/hooks/useIngestion";
+import { useJobs, useDocuments, useUpload, useUploadAudio } from "../api/hooks/useIngestion";
 import { useClients, useProjects } from "../api/hooks/useClients";
 
 const statusStyles: Record<string, string> = {
@@ -12,8 +12,10 @@ const statusStyles: Record<string, string> = {
 const field = "px-3 py-2 border border-slate-300 rounded-lg text-sm";
 
 export default function Ingest() {
+  const [mode, setMode] = useState<"document" | "audio">("document");
   const [file, setFile] = useState<File | null>(null);
   const [sourceType, setSourceType] = useState("whatsapp");
+  const [title, setTitle] = useState("");
   const [clientId, setClientId] = useState("");
   const [projectId, setProjectId] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -23,44 +25,95 @@ export default function Ingest() {
   const { data: clients } = useClients({ limit: 100 });
   const { data: projects } = useProjects({ limit: 100 });
   const upload = useUpload();
+  const uploadAudio = useUploadAudio();
+
+  const uploading = upload.isPending || uploadAudio.isPending;
+
+  function resetForm() {
+    setFile(null);
+    setTitle("");
+    if (inputRef.current) inputRef.current.value = "";
+  }
 
   function handleUpload() {
     if (!file) return;
-    upload.mutate(
-      {
-        file,
-        sourceType,
-        clientId: clientId ? Number(clientId) : undefined,
-        projectId: projectId ? Number(projectId) : undefined,
-      },
-      {
-        onSuccess: () => {
-          setFile(null);
-          if (inputRef.current) inputRef.current.value = "";
+
+    if (mode === "document") {
+      upload.mutate(
+        {
+          file,
+          sourceType,
+          clientId: clientId ? Number(clientId) : undefined,
+          projectId: projectId ? Number(projectId) : undefined,
         },
-      }
-    );
+        { onSuccess: resetForm }
+      );
+    } else {
+      if (!title.trim()) return;
+      uploadAudio.mutate(
+        {
+          file,
+          title,
+          clientId: clientId ? Number(clientId) : undefined,
+          projectId: projectId ? Number(projectId) : undefined,
+        },
+        { onSuccess: resetForm }
+      );
+    }
   }
 
   return (
     <main className="p-8 max-w-5xl">
       <h2 className="text-xl font-medium mb-4">Ingest</h2>
 
+      {/* Mode toggle */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => { setMode("document"); setFile(null); }}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+            mode === "document" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+          }`}
+        >
+          Document
+        </button>
+        <button
+          onClick={() => { setMode("audio"); setFile(null); }}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+            mode === "audio" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+          }`}
+        >
+          Meeting recording
+        </button>
+      </div>
+
       <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
         <div className="grid grid-cols-3 gap-3 mb-3">
-          <div>
-            <label className="text-xs text-slate-500 block mb-1">Source type</label>
-            <select
-              value={sourceType}
-              onChange={(e) => setSourceType(e.target.value)}
-              className={`${field} w-full`}
-            >
-              <option value="whatsapp">whatsapp</option>
-              <option value="email">email</option>
-              <option value="transcript">transcript</option>
-              <option value="file">file</option>
-            </select>
-          </div>
+          {mode === "document" ? (
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Source type</label>
+              <select
+                value={sourceType}
+                onChange={(e) => setSourceType(e.target.value)}
+                className={`${field} w-full`}
+              >
+                <option value="whatsapp">whatsapp</option>
+                <option value="email">email</option>
+                <option value="transcript">transcript</option>
+                <option value="file">file</option>
+              </select>
+            </div>
+          ) : (
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Meeting title</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Nova standup"
+                className={`${field} w-full`}
+              />
+            </div>
+          )}
           <div>
             <label className="text-xs text-slate-500 block mb-1">Client (optional)</label>
             <select
@@ -97,22 +150,24 @@ export default function Ingest() {
           <input
             ref={inputRef}
             type="file"
-            accept=".txt,.md,.csv,.json"
+            accept={mode === "document" ? ".txt,.md,.csv,.json" : ".mp3,.mp4,.wav,.m4a,.ogg,.flac"}
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="text-sm flex-1"
           />
           <button
             onClick={handleUpload}
-            disabled={!file || upload.isPending}
+            disabled={!file || uploading || (mode === "audio" && !title.trim())}
             className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm disabled:opacity-40"
           >
-            {upload.isPending ? "Uploading..." : "Upload"}
+            {uploading ? "Uploading..." : "Upload"}
           </button>
         </div>
 
-        {upload.isError && (
+        {(upload.isError || uploadAudio.isError) && (
           <p className="text-sm text-red-600 mt-3">
-            Upload failed. Allowed types: .txt, .md, .csv, .json
+            {mode === "document"
+              ? "Upload failed. Allowed types: .txt, .md, .csv, .json"
+              : "Upload failed. Allowed types: .mp3, .mp4, .wav, .m4a, .ogg, .flac"}
           </p>
         )}
       </div>
