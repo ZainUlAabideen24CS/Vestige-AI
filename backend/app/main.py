@@ -5,6 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.session import engine
 from app.routes import auth, clients, projects, ingest, search, dashboard,worklogs,deliveries,payments,users,project_members
 
+from app.services.ai.embeddings import get_model
+from app.services.ai.reranker import get_reranker
+get_model()
+get_reranker()
+
 
 
 app = FastAPI(title="Vestige AI")
