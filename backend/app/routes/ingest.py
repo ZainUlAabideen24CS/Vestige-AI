@@ -44,6 +44,8 @@ from app.services.memory.vector_store import (
     delete_document_chunks,
 )
 
+from app.services.ai.vocabulary import build_vocabulary_hint
+
 
 AUDIO_ALLOWED = {
     ".mp3",
@@ -429,6 +431,7 @@ async def upload_audio(
     title: str = Form(...),
     project_id: int | None = Form(None),
     client_id: int | None = Form(None),
+    participants: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -536,11 +539,10 @@ async def upload_audio(
 
     meeting = Meeting(
         title=title,
-        audio_path=str(
-            stored_path
-        ),
+        audio_path=str(stored_path),
         project_id=project_id,
         client_id=client_id,
+        participants=participants,
     )
 
     db.add(meeting)

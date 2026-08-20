@@ -20,4 +20,4 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
 
 def embed_query(text: str) -> list[float]:
-    return embed_texts([f"Represent this sentence for searching relevant passages: {text}"])[0]
+    return embed_texts([f"Represent this sentence for searching relevant passages: {text}"])[0] 

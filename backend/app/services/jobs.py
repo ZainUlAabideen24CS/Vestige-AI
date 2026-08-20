@@ -1,12 +1,14 @@
 from datetime import datetime, timezone
+
 from app.db.session import SessionLocal
 from app.models.ingestion_job import IngestionJob
 from app.models.document import Document
+from app.models.meeting import Meeting
 from app.services.ingestion.chunker import chunk_text
 from app.services.ai.embeddings import embed_texts
-from app.services.memory.vector_store import store_chunks, delete_document_chunks
-from app.models.meeting import Meeting
 from app.services.ai.transcribe import transcribe
+from app.services.ai.vocabulary import build_vocabulary_hint
+from app.services.memory.vector_store import store_chunks, delete_document_chunks
 
 
 def process_meeting(job_id: int):
@@ -25,7 +27,14 @@ def process_meeting(job_id: int):
         if not meeting or not meeting.audio_path:
             raise ValueError("Meeting or audio file not found")
 
-        text, duration = transcribe(meeting.audio_path)
+        hint = build_vocabulary_hint(
+            db,
+            project_id=meeting.project_id,
+            client_id=meeting.client_id,
+            extra_participants=meeting.participants,
+        )
+
+        text, duration = transcribe(meeting.audio_path, vocabulary_hint=hint)
         if not text:
             raise ValueError("No speech detected in audio")
 
@@ -35,6 +44,9 @@ def process_meeting(job_id: int):
         db.commit()
 
         chunks = chunk_text(text)
+        if not chunks:
+            raise ValueError("No text content produced from audio")
+
         vectors = embed_texts(chunks)
         job.progress = 85
         db.commit()
@@ -67,6 +79,7 @@ def process_meeting(job_id: int):
     finally:
         db.close()
 
+
 def process_document(job_id: int):
     db = SessionLocal()
     try:
@@ -77,7 +90,7 @@ def process_document(job_id: int):
         job.status = "processing"
         job.started_at = datetime.now(timezone.utc)
         job.progress = 10
-        db.commit()  
+        db.commit()
 
         doc = db.get(Document, job.document_id)
         if not doc:

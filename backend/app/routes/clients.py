@@ -45,8 +45,8 @@ def accessible_client_ids(
             -> all clients
 
         MANAGER
-            -> clients they directly manage
-            -> clients of projects they manage
+            -> clients they directly manage (even before
+               those clients have any projects)
             -> clients of projects they can access
 
         EMPLOYEE
@@ -57,35 +57,15 @@ def accessible_client_ids(
     if user.role == "admin":
         return None
 
-    client_ids: set[int] = set()
-
     # ---------------------------------------------------------
-    # Directly managed clients
+    # Clients reachable via accessible projects (all roles)
     # ---------------------------------------------------------
-
-    if user.role == "manager":
-        managed_clients = (
-            db.query(Client.id)
-            .filter(
-                Client.account_manager_id == user.id
-            )
-            .all()
-        )
-
-        client_ids.update(
-            row[0]
-            for row in managed_clients
-            if row[0] is not None
-        )
-
-    # ---------------------------------------------------------
-    # Get all projects this user can access
-    # ---------------------------------------------------------
-
     allowed_project_ids = accessible_project_ids(
         db,
         user,
     )
+
+    from_projects: set[int] = set()
 
     if allowed_project_ids:
         project_clients = (
@@ -97,42 +77,32 @@ def accessible_client_ids(
             .all()
         )
 
-        client_ids.update(
+        from_projects.update(
             row[0]
             for row in project_clients
             if row[0] is not None
         )
 
-    return list(client_ids)
+    # ---------------------------------------------------------
+    # Managers also see clients they directly own,
+    # even before those clients have any projects
+    # ---------------------------------------------------------
+
+    if user.role == "manager":
+        own = {
+            r[0]
+            for r in db.query(Client.id)
+            .filter(Client.account_manager_id == user.id)
+            .all()
+        }
+
+        return list(from_projects | own)
 
     # ---------------------------------------------------------
-    # EMPLOYEE
+    # EMPLOYEE (and any other non-manager, non-admin role)
     # ---------------------------------------------------------
 
-    allowed_project_ids = accessible_project_ids(
-        db,
-        user,
-    )
-
-    if not allowed_project_ids:
-        return []
-
-    employee_clients = (
-        db.query(Project.client_id)
-        .filter(
-            Project.id.in_(allowed_project_ids)
-        )
-        .distinct()
-        .all()
-    )
-
-    client_ids.update(
-        row[0]
-        for row in employee_clients
-        if row[0] is not None
-    )
-
-    return list(client_ids)
+    return list(from_projects)
 
 
 # ============================================================

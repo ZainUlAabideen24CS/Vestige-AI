@@ -206,79 +206,33 @@ export function useUpload() {
 interface UploadAudioArgs {
   file: File;
   title: string;
+  participants?: string;
   projectId?: number;
   clientId?: number;
 }
 
-
 export function useUploadAudio() {
-  const queryClient =
-    useQueryClient();
+  const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      file,
-      title,
-      projectId,
-      clientId,
-    }: UploadAudioArgs) => {
+    mutationFn: async ({ file, title, participants, projectId, clientId }: UploadAudioArgs) => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("title", title);
+      if (participants) form.append("participants", participants);
+      if (projectId) form.append("project_id", String(projectId));
+      if (clientId) form.append("client_id", String(clientId));
 
-      const form =
-        new FormData();
-
-      form.append(
-        "file",
-        file
-      );
-
-      form.append(
-        "title",
-        title
-      );
-
-      if (
-        projectId !== undefined
-      ) {
-        form.append(
-          "project_id",
-          String(projectId)
-        );
-      }
-
-      if (
-        clientId !== undefined
-      ) {
-        form.append(
-          "client_id",
-          String(clientId)
-        );
-      }
-
-      const res =
-        await api.post<IngestionJob>(
-          "/ingest/audio",
-          form
-        );
-
+      const res = await api.post<IngestionJob>("/ingest/audio", form, { timeout: 300000 });
       return res.data;
     },
-
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["jobs"],
-      });
-
-      queryClient.invalidateQueries({
-        queryKey: ["documents"],
-      });
-
-      queryClient.invalidateQueries({
-        queryKey: ["dashboard"],
-      });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"]});
     },
   });
 }
-
 
 // ============================================================
 // DOCUMENTS
