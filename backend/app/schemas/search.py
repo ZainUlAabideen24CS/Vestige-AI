@@ -25,4 +25,4 @@ class AskRequest(BaseModel):
 class AskResponse(BaseModel):
     question: str
     answer: str
-    sources: list[SearchHit]
+    sources: list[SearchHit]   

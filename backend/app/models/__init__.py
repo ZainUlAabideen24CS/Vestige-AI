@@ -9,3 +9,4 @@ from app.models.document import Document
 from app.models.meeting import Meeting
 from app.models.ingestion_job import IngestionJob
 from app.models.project_member import ProjectMember
+from app.models.dialogue_turn import DialogueTurn

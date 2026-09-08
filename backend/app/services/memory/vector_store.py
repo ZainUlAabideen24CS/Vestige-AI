@@ -1,4 +1,5 @@
 import uuid
+import os
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
@@ -14,14 +15,13 @@ from app.services.ai.embeddings import VECTOR_SIZE
 COLLECTION = "vestige_chunks"
 _client: QdrantClient | None = None
 
-
 def get_client() -> QdrantClient:
     global _client
     if _client is None:
-        _client = QdrantClient(host="localhost", port=6333)
+        q_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+        _client = QdrantClient(url=q_url)
         ensure_collection(_client)
     return _client
-
 
 def ensure_collection(client: QdrantClient):
     existing = [c.name for c in client.get_collections().collections]
@@ -30,7 +30,6 @@ def ensure_collection(client: QdrantClient):
             collection_name=COLLECTION,
             vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
         )
-
 
 def store_chunks(document_id: int, chunks: list[str], vectors: list[list[float]], meta: dict):
     client = get_client()
@@ -49,7 +48,6 @@ def store_chunks(document_id: int, chunks: list[str], vectors: list[list[float]]
     ]
     client.upsert(collection_name=COLLECTION, points=points)
 
-
 def delete_document_chunks(document_id: int):
     client = get_client()
     client.delete(
@@ -59,7 +57,6 @@ def delete_document_chunks(document_id: int):
         ),
     )
 
-
 def search(
     vector: list[float],
     limit: int = 5,
@@ -68,16 +65,17 @@ def search(
     allowed_projects: list[int] | None = None,
 ) -> list[dict]:
     client = get_client()
-
     conditions = []
-    if client_id:
-        conditions.append(FieldCondition(key="client_id", match=MatchValue(value=client_id)))
+
+    # 1. STRICT FILTER: Agar project select hai toh sirf wahi search karo
     if project_id:
         conditions.append(FieldCondition(key="project_id", match=MatchValue(value=project_id)))
+    elif client_id:
+        conditions.append(FieldCondition(key="client_id", match=MatchValue(value=client_id)))
+
+    # 2. SECURITY: User sirf apne allowed projects dekh sake
     if allowed_projects is not None:
-        conditions.append(
-            FieldCondition(key="project_id", match=MatchAny(any=allowed_projects))
-        )
+        conditions.append(FieldCondition(key="project_id", match=MatchAny(any=allowed_projects)))
 
     results = client.query_points(
         collection_name=COLLECTION,
@@ -93,8 +91,9 @@ def search(
             "chunk_index": r.payload.get("chunk_index"),
             "client_id": r.payload.get("client_id"),
             "project_id": r.payload.get("project_id"),
-            "filename": r.payload.get("filename"),
+            "filename": r.payload.get("filename") or r.payload.get("title"),
             "score": r.score,
+            "speaker_name": r.payload.get("speaker_name")
         }
         for r in results
     ]

@@ -14,14 +14,17 @@ def build_vocabulary_hint(
     client_id: int | None = None,
     extra_participants: str | None = None,
 ) -> str:
-    """Build a Whisper prompt biasing transcription toward known names."""
+    """Return a bare comma-separated name list.
+
+    This is passed to the transcriber as a vocabulary bias. It must NOT be a
+    sentence — Whisper treats the prompt as preceding text and will continue
+    writing it into the transcript when the audio is unclear.
+    """
     terms: list[str] = []
 
-    # Names supplied on the upload form take priority
     if extra_participants:
         terms.extend(n.strip() for n in extra_participants.split(",") if n.strip())
 
-    # Staff on the selected project, or all active staff
     if project_id:
         rows = (
             db.query(User.full_name)
@@ -40,10 +43,9 @@ def build_vocabulary_hint(
                 if manager:
                     terms.append(manager.full_name)
     else:
-        rows = db.query(User.full_name).filter(User.is_active.is_(True)).all()
+        rows = db.query(User.full_name).filter(User.is_active == True).all()  # noqa: E712
         terms.extend(r[0] for r in rows if r[0])
 
-    # Client company and contact
     target_client_id = client_id
     if not target_client_id and project_id:
         project = db.get(Project, project_id)
@@ -56,7 +58,6 @@ def build_vocabulary_hint(
             if client.contact_name:
                 terms.append(client.contact_name)
 
-    # Deduplicate, preserve order, cap length
     seen: set[str] = set()
     unique: list[str] = []
     for t in terms:
@@ -67,10 +68,4 @@ def build_vocabulary_hint(
         if len(unique) >= MAX_TERMS:
             break
 
-    if not unique:
-        return "A business meeting between a software agency and its client."
-
-    return (
-        "A business meeting between a software agency and its client. "
-        f"Names and terms that may appear: {', '.join(unique)}."
-    )
+    return ", ".join(unique)
