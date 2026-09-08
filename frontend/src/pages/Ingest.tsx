@@ -2,10 +2,11 @@ import { useState, useRef } from "react";
 import {
   useJobs,
   useDocuments,
+  useMeetings,   // ADD THIS
   useUpload,
   useUploadAudio,
 } from "../api/hooks/useIngestion";
-import { useClients, useProjects } from "../api/hooks/useClients";
+import { useClients, useClientProjects } from "../api/hooks/useClients";
 
 const statusStyles: Record<string, string> = {
   pending: "bg-slate-100 text-slate-700",
@@ -29,7 +30,8 @@ export default function Ingest() {
   const { data: jobs } = useJobs();
   const { data: documents } = useDocuments();
   const { data: clients } = useClients({ limit: 100 });
-  const { data: projects } = useProjects({ limit: 100 });
+  const { data: projects } = useClientProjects(Number(clientId));
+  const { data: meetings } = useMeetings();
 
   const upload = useUpload();
   const uploadAudio = useUploadAudio();
@@ -138,10 +140,13 @@ export default function Ingest() {
           <div>
             <label className="text-xs text-slate-500 block mb-1">Client (optional)</label>
             <select
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              className={`${field} w-full`}
-            >
+  value={clientId}
+  onChange={(e) => {
+    setClientId(e.target.value);
+    setProjectId("");   // client change hote hi purana project selection clear karo
+  }}
+  className={`${field} w-full`}
+>
               <option value="">None</option>
               {clients?.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -153,18 +158,21 @@ export default function Ingest() {
 
           <div>
             <label className="text-xs text-slate-500 block mb-1">Project</label>
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className={`${field} w-full`}
-            >
-              <option value="">Select project</option>
-              {projects?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+           <select
+  value={projectId}
+  onChange={(e) => setProjectId(e.target.value)}
+  disabled={!clientId}
+  className={`${field} w-full`}
+>
+  <option value="">
+    {clientId ? "Select project" : "Select a client first"}
+  </option>
+  {projects?.map((p) => (
+    <option key={p.id} value={p.id}>
+      {p.name}
+    </option>
+  ))}
+</select>
           </div>
         </div>
 
@@ -225,62 +233,64 @@ export default function Ingest() {
 
       <h3 className="text-lg font-medium mb-3">Jobs</h3>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mb-6">
-        {!jobs && <p className="p-6 text-sm text-slate-500">Loading...</p>}
+  <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mb-6">
+  {!jobs && <p className="p-6 text-sm text-slate-500">Loading...</p>}
 
-        {jobs && jobs.length === 0 && (
-          <p className="p-6 text-sm text-slate-500">
-            No jobs yet. Upload a file to start.
-          </p>
-        )}
+  {jobs && jobs.length === 0 && (
+    <p className="p-6 text-sm text-slate-500">
+      No jobs yet. Upload a file to start.
+    </p>
+  )}
 
-        {jobs && jobs.length > 0 && (
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium">Job</th>
-                <th className="text-left px-4 py-3 font-medium">Type</th>
-                <th className="text-left px-4 py-3 font-medium">Uploaded by</th>
-                <th className="text-left px-4 py-3 font-medium">Progress</th>
-                <th className="text-left px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
+  {jobs && jobs.length > 0 && (
+    <div className="max-h-[280px] overflow-y-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+          <tr>
+            <th className="text-left px-4 py-3 font-medium">Job</th>
+            <th className="text-left px-4 py-3 font-medium">Type</th>
+            <th className="text-left px-4 py-3 font-medium">Uploaded by</th>
+            <th className="text-left px-4 py-3 font-medium">Progress</th>
+            <th className="text-left px-4 py-3 font-medium">Status</th>
+          </tr>
+        </thead>
 
-            <tbody>
-              {jobs.map((j) => (
-                <tr key={j.id} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-3">#{j.id}</td>
-                  <td className="px-4 py-3 text-slate-600">{j.job_type}</td>
-                  <td className="px-4 py-3 font-medium">
-                    {j.created_by_name ?? "Unknown"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-28 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-slate-900 transition-all duration-500"
-                          style={{ width: `${j.progress}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-slate-500">{j.progress}%</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs ${
-                        statusStyles[j.status] ?? "bg-slate-100 text-slate-700"
-                      }`}
-                      title={j.error_message ?? undefined}
-                    >
-                      {j.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+        <tbody>
+          {jobs.map((j) => (
+            <tr key={j.id} className="border-b border-slate-100 last:border-0">
+              <td className="px-4 py-3">#{j.id}</td>
+              <td className="px-4 py-3 text-slate-600">{j.job_type}</td>
+              <td className="px-4 py-3 font-medium">
+                {j.created_by_name ?? "Unknown"}
+              </td>
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-28 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-slate-900 transition-all duration-500"
+                      style={{ width: `${j.progress}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-slate-500">{j.progress}%</span>
+                </div>
+              </td>
+              <td className="px-4 py-3">
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs ${
+                    statusStyles[j.status] ?? "bg-slate-100 text-slate-700"
+                  }`}
+                  title={j.error_message ?? undefined}
+                >
+                  {j.status}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+</div>
 
       <h3 className="text-lg font-medium mb-3">Documents</h3>
 
@@ -319,6 +329,58 @@ export default function Ingest() {
           </table>
         )}
       </div>
+
+      <h3 className="text-lg font-medium mb-3 mt-6">Meetings</h3>
+
+<div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+  {!meetings && <p className="p-6 text-sm text-slate-500">Loading...</p>}
+
+  {meetings && meetings.length === 0 && (
+    <p className="p-6 text-sm text-slate-500">
+      No meetings yet. Upload a recording to start.
+    </p>
+  )}
+
+  {meetings && meetings.length > 0 && (
+    <div className="max-h-[280px] overflow-y-auto">
+      <table className="w-full text-sm">
+       <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+  <tr>
+    <th className="text-left px-4 py-3 font-medium">Title</th>
+    <th className="text-left px-4 py-3 font-medium">Participants</th>
+    <th className="text-left px-4 py-3 font-medium">Duration</th>
+    <th className="text-left px-4 py-3 font-medium">Uploaded by</th>
+    <th className="text-left px-4 py-3 font-medium">Uploaded</th>
+  </tr>
+</thead>
+
+<tbody>
+  {meetings.map((m) => (
+    <tr key={m.id} className="border-b border-slate-100 last:border-0">
+      <td className="px-4 py-3">{m.title}</td>
+      <td className="px-4 py-3 text-slate-600">
+        {m.participants ?? "—"}
+      </td>
+      <td className="px-4 py-3 text-slate-600">
+        {m.duration_seconds
+          ? `${Math.round(m.duration_seconds / 60)} min`
+          : "—"}
+      </td>
+      <td className="px-4 py-3 font-medium">
+        {m.uploaded_by_name ?? "Unknown"}
+      </td>
+      <td className="px-4 py-3 text-slate-600">
+        {new Date(m.created_at).toLocaleDateString()}
+      </td>
+    </tr>
+  ))}
+</tbody>
+
+      </table>
+    </div>
+  )}
+</div>
+
     </main>
   );
 }

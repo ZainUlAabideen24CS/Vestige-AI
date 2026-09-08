@@ -146,3 +146,15 @@ export interface Payment {
   paid_at: string | null;
   created_at: string;
 }
+
+export interface Meeting {
+  id: number;
+  title: string;
+  project_id: number | null;
+  client_id: number | null;
+  duration_seconds: number | null;
+  participants: string | null;
+  uploaded_by: number | null;
+  uploaded_by_name: string | null;
+  created_at: string;
+}

@@ -9,6 +9,7 @@ import { api } from "../clients";
 import type {
   IngestionJob,
   Document,
+  Meeting,
 } from "../../types";
 
 import type {
@@ -17,40 +18,37 @@ import type {
 } from "../../types";
 
 
+// useIngestion.ts mein useAsk ko is tarah update karein:
 export function useAsk() {
   return useMutation({
-    mutationFn: async (
-      args: {
-        question: string;
-        clientId?: number;
-      }
-    ) => {
-      const res = await api.post<AskResponse>(
-        "/search/ask",
-        {
-          question: args.question,
-          client_id: args.clientId,
-        },
-        {
-          timeout: 180000,
-        }
-      );
-
+    mutationFn: async (args: {
+      question: string;
+      clientId?: number;
+      projectId?: number; // Yeh line add karein
+    }) => {
+      const res = await api.post<AskResponse>("/search/ask", {
+        question: args.question,
+        client_id: args.clientId,
+        project_id: args.projectId, // Backend property name
+      });
       return res.data;
     },
   });
 }
 
 
+
 export function useSearch(
   query: string,
-  clientId?: number
+  clientId?: number,
+  projectId?: number // Yeh add kiya
 ) {
   return useQuery({
     queryKey: [
       "search",
       query,
       clientId,
+      projectId, // Query key mein bhi add kiya taake cache sahi rahay
     ],
 
     queryFn: async () => {
@@ -59,8 +57,9 @@ export function useSearch(
         {
           params: {
             q: query,
-            limit: 4,
+            limit: 10,
             client_id: clientId,
+            project_id: projectId, // Backend ko bheja
           },
         }
       );
@@ -68,9 +67,7 @@ export function useSearch(
       return res.data;
     },
 
-    enabled:
-      query.trim().length >= 3,
-
+    enabled: query.trim().length >= 3,
     staleTime: 60_000,
   });
 }
@@ -252,6 +249,31 @@ export function useDocuments() {
             },
           }
         );
+
+      return res.data;
+    },
+
+    refetchInterval: 3000,
+  });
+}
+
+// ============================================================
+// MEETINGS
+// ============================================================
+
+export function useMeetings() {
+  return useQuery({
+    queryKey: ["meetings"],
+
+    queryFn: async () => {
+      const res = await api.get<Meeting[]>(
+        "/ingest/meetings",
+        {
+          params: {
+            limit: 50,
+          },
+        }
+      );
 
       return res.data;
     },
