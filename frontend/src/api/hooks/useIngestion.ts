@@ -281,3 +281,29 @@ export function useMeetings() {
     refetchInterval: 3000,
   });
 }
+
+// ============================================================
+// SINGLE DOCUMENT / MEETING (for summary modal)
+// ============================================================
+
+export function useDocumentDetail(id: number | null) {
+  return useQuery({
+    queryKey: ["document", id],
+    queryFn: async () => {
+      const res = await api.get<Document>(`/ingest/documents/${id}`);
+      return res.data;
+    },
+    enabled: !!id,
+  });
+}
+
+export function useMeetingDetail(id: number | null) {
+  return useQuery({
+    queryKey: ["meeting", id],
+    queryFn: async () => {
+      const res = await api.get<Meeting>(`/ingest/meetings/${id}`);
+      return res.data;
+    },
+    enabled: !!id,
+  });
+}

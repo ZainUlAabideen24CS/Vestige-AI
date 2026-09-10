@@ -74,11 +74,8 @@ export interface Document {
   project_id: number | null;
   client_id: number | null;
   uploaded_by: number | null;
-
-  // NEW
   uploaded_by_name: string | null;
-
-  summary: string | null;
+  summary: string | null;   // ensure this exists
   chunk_count: number;
   created_at: string;
 }
@@ -92,6 +89,7 @@ export interface SearchHit {
   project_id: number | null;
   filename: string | null;
   score: number;
+  relevance?: number; // Optional relevance score
 }
 
 
@@ -156,5 +154,6 @@ export interface Meeting {
   participants: string | null;
   uploaded_by: number | null;
   uploaded_by_name: string | null;
+  summary: string | null;   // ADD THIS
   created_at: string;
 }
