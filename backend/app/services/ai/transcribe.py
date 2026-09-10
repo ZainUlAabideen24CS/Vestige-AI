@@ -7,6 +7,7 @@ from typing import Any
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types   
+from mutagen import File as MutagenFile
 
 load_dotenv()   
 
@@ -796,8 +797,35 @@ Preserve timestamps for each segment.
         f"{speakers}"
     )
 
+        # --------------------------------------------------------
+    # Compute duration from the last segment's end timestamp
+    # --------------------------------------------------------
+
+        # Prefer actual audio file duration over last-segment timestamp
+    file_duration = _get_audio_file_duration(audio_path)
+
+    if dialogues:
+        segment_duration = max((turn.get("end") or 0.0) for turn in dialogues)
+    else:
+        segment_duration = 0.0
+
+    duration_seconds = file_duration if file_duration > 0 else segment_duration
+
+    print(f"[transcribe] File duration: {file_duration:.1f}s, segment-based: {segment_duration:.1f}s")
+
     return (
         transcript_text,
-        0.0,
+        duration_seconds,
         dialogues,
     )
+
+def _get_audio_file_duration(audio_path: str) -> float:
+    try:
+        audio = MutagenFile(audio_path)
+        if audio is not None and audio.info is not None:
+            return float(audio.info.length)
+    except Exception as e:
+        print(f"[transcribe] Could not read audio file duration: {e}")
+    return 0.0
+
+   

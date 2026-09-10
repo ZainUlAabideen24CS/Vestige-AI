@@ -511,6 +511,53 @@ def list_documents(
     return [document_response(db, document) for document in documents]
 
     # ============================================================
+# GET SINGLE DOCUMENT
+# ============================================================
+
+@router.get("/documents/{document_id}", response_model=DocumentOut)
+def get_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    document = db.get(Document, document_id)
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if document.project_id and not can_access_project(db, user, document.project_id):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this document",
+        )
+
+    return document_response(db, document)
+
+
+# ============================================================
+# GET SINGLE MEETING
+# ============================================================
+
+@router.get("/meetings/{meeting_id}")
+def get_meeting(
+    meeting_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    meeting = db.get(Meeting, meeting_id)
+
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    if meeting.project_id and not can_access_project(db, user, meeting.project_id):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this meeting",
+        )
+
+    return meeting_response(db, meeting)
+
+    # ============================================================
 # MEETING RESPONSE
 # ============================================================
 
@@ -531,6 +578,7 @@ def meeting_response(db: Session, meeting: Meeting):
         "participants": meeting.participants,
         "uploaded_by": meeting.uploaded_by,
         "uploaded_by_name": uploaded_by_name,
+        "summary": meeting.summary,
         "created_at": meeting.created_at,
     }
 

@@ -1,7 +1,7 @@
 from sentence_transformers import SentenceTransformer
 
-MODEL_NAME = "BAAI/bge-small-en-v1.5"
-VECTOR_SIZE = 384
+MODEL_NAME = "BAAI/bge-m3"
+VECTOR_SIZE = 1024
 
 _model: SentenceTransformer | None = None
 
@@ -20,4 +20,4 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
 
 def embed_query(text: str) -> list[float]:
-    return embed_texts([f"Represent this sentence for searching relevant passages: {text}"])[0] 
+    return embed_texts([text])[0]

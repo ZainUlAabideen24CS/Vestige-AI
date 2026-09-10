@@ -10,6 +10,7 @@ from app.models.dialogue_turn import DialogueTurn
 from app.services.ai.embeddings import embed_texts
 from app.services.ai.transcribe import transcribe
 from app.services.ai.speaker_naming import map_speakers
+from app.services.ai.llm import generate_summary
 
 from app.services.ingestion.chunker import (
     chunk_text,
@@ -45,6 +46,8 @@ def process_meeting(job_id: int):
         Save DialogueTurn
           ↓
         Save original transcript
+          ↓
+        Generate meeting summary
           ↓
         Create RAG chunks
           ↓
@@ -422,6 +425,35 @@ def process_meeting(job_id: int):
         db.commit()
 
         # =====================================================
+        # 8b. GENERATE MEETING SUMMARY
+        # =====================================================
+
+        print(
+            "[JOBS] Generating meeting summary..."
+        )
+
+        try:
+
+            meeting.summary = generate_summary(
+                meeting.transcript,
+                title=meeting.title,
+            )
+
+        except Exception as e:
+
+            print(
+                f"[JOBS] Summary generation failed: {e}"
+            )
+
+            meeting.summary = None
+
+        db.commit()
+
+        job.progress = 70
+
+        db.commit()
+
+        # =====================================================
         # 9. CREATE RAG CHUNKS
         # =====================================================
 
@@ -597,6 +629,8 @@ def process_document(job_id: int):
           ↓
         Read text
           ↓
+        Generate summary
+          ↓
         Chunk
           ↓
         Embeddings
@@ -672,6 +706,31 @@ def process_document(job_id: int):
         doc.extracted_text = text
 
         job.progress = 35
+
+        db.commit()
+
+        # =====================================================
+        # GENERATE DOCUMENT SUMMARY
+        # =====================================================
+
+        print(
+            "[JOBS] Generating document summary..."
+        )
+
+        try:
+
+            doc.summary = generate_summary(
+                text,
+                title=doc.filename,
+            )
+
+        except Exception as e:
+
+            print(
+                f"[JOBS] Summary generation failed: {e}"
+            )
+
+            doc.summary = None
 
         db.commit()
 

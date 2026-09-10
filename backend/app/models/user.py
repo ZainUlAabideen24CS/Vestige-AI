@@ -14,3 +14,10 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(30), default="employee")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Forces the user to set their own password on first login
+    must_reset_password: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Used for the "Forgot Password" flow
+    reset_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reset_token_expires: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
