@@ -155,6 +155,31 @@ def document_response(db: Session, document: Document):
     }
 
 
+# ============================================================
+# MEETING RESPONSE
+# ============================================================
+
+def meeting_response(db: Session, meeting: Meeting):
+    uploaded_by_name = None
+
+    if meeting.uploaded_by is not None:
+        uploader = db.get(User, meeting.uploaded_by)
+        if uploader:
+            uploaded_by_name = uploader.full_name
+
+    return {
+        "id": meeting.id,
+        "title": meeting.title,
+        "project_id": meeting.project_id,
+        "client_id": meeting.client_id,
+        "duration_seconds": meeting.duration_seconds,
+        "participants": meeting.participants,
+        "uploaded_by": meeting.uploaded_by,
+        "uploaded_by_name": uploaded_by_name,
+        "summary": meeting.summary,
+        "created_at": meeting.created_at,
+    }
+
 
 # ============================================================
 # UPLOAD DOCUMENT
@@ -188,23 +213,9 @@ async def upload(
     stored_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
     stored_path.write_bytes(await file.read())
 
-    # Replace an identical prior upload rather than duplicating it
-    existing = (
-        db.query(Document)
-        .filter(Document.filename == (file.filename or stored_path.name))
-        .filter(Document.client_id == client_id)
-        .filter(Document.project_id == project_id)
-        .first()
-    )
-
-    if existing:
-        db.query(IngestionJob).filter(
-            IngestionJob.document_id == existing.id
-        ).delete()
-        delete_document_chunks(existing.id)
-        db.delete(existing)
-        db.commit()
-
+    # NOTE: No overwrite check here anymore -- every upload creates
+    # its own new Document record, even if the filename, client, and
+    # project all match a previous upload. Nothing is deleted.
     doc = Document(
         filename=file.filename or stored_path.name,
         file_path=str(stored_path),
@@ -267,34 +278,17 @@ async def upload_audio(
     stored_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
     stored_path.write_bytes(await file.read())
 
-    # Replace an identical prior recording rather than duplicating it
-    existing = (
-        db.query(Meeting)
-        .filter(Meeting.title == title)
-        .filter(Meeting.client_id == client_id)
-        .filter(Meeting.project_id == project_id)
-        .first()
-    )
-
-    if existing:
-        db.query(IngestionJob).filter(
-            IngestionJob.meeting_id == existing.id
-        ).delete()
-        db.query(DialogueTurn).filter(
-            DialogueTurn.meeting_id == existing.id
-        ).delete()
-        delete_document_chunks(-existing.id)
-        db.delete(existing)
-        db.commit()
-
+    # NOTE: No overwrite check here anymore -- every upload creates
+    # its own new Meeting record, even if the title, client, and
+    # project all match a previous upload. Nothing is deleted.
     meeting = Meeting(
-    title=title,
-    audio_path=str(stored_path),
-    project_id=project_id,
-    client_id=client_id,
-    participants=participants,
-    uploaded_by=user.id,   # ADD THIS
-)
+        title=title,
+        audio_path=str(stored_path),
+        project_id=project_id,
+        client_id=client_id,
+        participants=participants,
+        uploaded_by=user.id,
+    )
 
     db.add(meeting)
     db.commit()
@@ -440,7 +434,7 @@ def list_jobs(
         meet_ids = [r[0] for r in db.query(Meeting.id).filter(Meeting.project_id.in_(allowed_projects)).all()]
 
         query = query.filter(
-            IngestionJob.document_id.in_(doc_ids) | 
+            IngestionJob.document_id.in_(doc_ids) |
             IngestionJob.meeting_id.in_(meet_ids)
         )
 
@@ -510,7 +504,8 @@ def list_documents(
 
     return [document_response(db, document) for document in documents]
 
-    # ============================================================
+
+# ============================================================
 # GET SINGLE DOCUMENT
 # ============================================================
 
@@ -557,30 +552,6 @@ def get_meeting(
 
     return meeting_response(db, meeting)
 
-    # ============================================================
-# MEETING RESPONSE
-# ============================================================
-
-def meeting_response(db: Session, meeting: Meeting):
-    uploaded_by_name = None
-
-    if meeting.uploaded_by is not None:
-        uploader = db.get(User, meeting.uploaded_by)
-        if uploader:
-            uploaded_by_name = uploader.full_name
-
-    return {
-        "id": meeting.id,
-        "title": meeting.title,
-        "project_id": meeting.project_id,
-        "client_id": meeting.client_id,
-        "duration_seconds": meeting.duration_seconds,
-        "participants": meeting.participants,
-        "uploaded_by": meeting.uploaded_by,
-        "uploaded_by_name": uploaded_by_name,
-        "summary": meeting.summary,
-        "created_at": meeting.created_at,
-    }
 
 # ============================================================
 # LIST MEETINGS

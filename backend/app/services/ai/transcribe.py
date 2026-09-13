@@ -6,67 +6,153 @@ from typing import Any
 
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types   
+from google.genai import types
 from mutagen import File as MutagenFile
 
-load_dotenv()   
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY")) 
+# ============================================================
+# ENV / CLIENT
+# ============================================================
 
-TRANSCRIBE_MODEL = "gemini-3.5-transcribe"  
+load_dotenv()
 
-# Gemini text/multimodal model used for verification.
-# You can change this from .env without changing code.
+client = genai.Client(
+    api_key=os.getenv("GEMINI_API_KEY")
+)
+
+TRANSCRIBE_MODEL = "gemini-3.5-transcribe"
+
 VERIFY_MODEL = os.getenv(
     "GEMINI_TEXT_MODEL",
     "gemini-3.6-flash",
 )
 
-VERIFY_TRANSCRIPT = os.getenv(
-    "GEMINI_VERIFY_TRANSCRIPT",
-    "true",
-).lower() == "true"
+VERIFY_TRANSCRIPT = (
+    os.getenv(
+        "GEMINI_VERIFY_TRANSCRIPT",
+        "true",
+    ).lower()
+    == "true"
+)
 
 
 # ============================================================
-# Helpers
+# GENERIC SDK HELPERS
 # ============================================================
 
 def _get_value(obj: Any, *names, default=None):
     """
-    Safely read a value from either an SDK object or a dict.
+    Safely read a value from either:
+    - Gemini SDK objects
+    - dictionaries
     """
+
+    if obj is None:
+        return default
+
     for name in names:
-        if obj is None:
-            continue
 
         if isinstance(obj, dict):
             if name in obj:
-                return obj[name]
+                value = obj[name]
 
-        value = getattr(obj, name, None)
+                if value is not None:
+                    return value
 
-        if value is not None:
-            return value
+        try:
+            value = getattr(obj, name, None)
+
+            if value is not None:
+                return value
+
+        except Exception:
+            pass
 
     return default
 
 
+def _seconds(value):
+    """
+    Convert Gemini timestamp/duration values into seconds.
+    """
+
+    if value is None:
+        return None
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    try:
+        return float(value.total_seconds())
+    except Exception:
+        pass
+
+    try:
+        return float(value.seconds)
+    except Exception:
+        pass
+
+    # Some SDK versions may expose:
+    # {"seconds": ..., "nanos": ...}
+    if isinstance(value, dict):
+
+        seconds = value.get("seconds")
+
+        nanos = value.get("nanos", 0)
+
+        if seconds is not None:
+
+            try:
+                return float(seconds) + (
+                    float(nanos) / 1_000_000_000
+                )
+
+            except Exception:
+                pass
+
+    return None
+
+
+# ============================================================
+# AUDIO TRANSCRIPTION EXTRACTION
+# ============================================================
+
 def _get_audio_transcription(part):
     """
-    Gemini SDK versions can expose audio transcription
+    Gemini SDK versions expose audio transcription
     slightly differently.
     """
-    value = _get_value(
+
+    return _get_value(
         part,
         "audio_transcription",
         "audioTranscription",
     )
 
-    return value
+
+def _extract_text(annotation):
+    """
+    Extract actual transcript text.
+    """
+
+    text = _get_value(
+        annotation,
+        "text",
+        "transcript",
+        "content",
+    )
+
+    if text is None:
+        return ""
+
+    return str(text).strip()
 
 
 def _extract_speaker(annotation):
+    """
+    Extract Gemini speaker ID.
+    """
+
     speaker = _get_value(
         annotation,
         "speaker",
@@ -81,49 +167,14 @@ def _extract_speaker(annotation):
 
     speaker = str(speaker).strip()
 
-    if not speaker:
-        return None
-
-    return speaker
-
-
-def _extract_text(annotation):
-    text = _get_value(
-        annotation,
-        "text",
-        "transcript",
-        "content",
-    )
-
-    if text is None:
-        return ""
-
-    return str(text).strip()
-
-
-def _seconds(value):
-    if value is None:
-        return None
-
-    if isinstance(value, (int, float)):
-        return float(value)
-
-    # Gemini duration objects normally expose total_seconds()
-    try:
-        return float(value.total_seconds())
-    except Exception:
-        pass
-
-    # Some SDK objects may expose seconds
-    try:
-        return float(value.seconds)
-    except Exception:
-        pass
-
-    return None
+    return speaker if speaker else None
 
 
 def _extract_times(annotation):
+    """
+    Extract start/end timestamps.
+    """
+
     start = _get_value(
         annotation,
         "start_offset",
@@ -138,16 +189,26 @@ def _extract_times(annotation):
         "end",
     )
 
-    return _seconds(start), _seconds(end)
+    return (
+        _seconds(start),
+        _seconds(end),
+    )
 
 
-def _normalize_speaker(raw_speaker, speaker_map):
+# ============================================================
+# SPEAKER NORMALIZATION
+# ============================================================
+
+def _normalize_speaker(
+    raw_speaker,
+    speaker_map,
+):
     """
-    Convert arbitrary Gemini speaker IDs into stable labels.
+    Convert Gemini speaker IDs into:
 
-    Example:
-        spk:0 -> SPEAKER_00
-        speaker_1 -> SPEAKER_01
+        SPEAKER_00
+        SPEAKER_01
+        SPEAKER_02
     """
 
     if raw_speaker is None:
@@ -155,15 +216,32 @@ def _normalize_speaker(raw_speaker, speaker_map):
 
     raw = str(raw_speaker).strip()
 
-    # Extract trailing number where possible
-    match = re.search(r"(\d+)$", raw)
+    if not raw:
+        return "SPEAKER_UNKNOWN"
+
+    # Examples:
+    # spk_0
+    # speaker_1
+    # SPEAKER_02
+    # speaker2
+
+    match = re.search(
+        r"(\d+)$",
+        raw,
+    )
 
     if match:
-        number = int(match.group(1))
+
+        number = int(
+            match.group(1)
+        )
+
     else:
-        # Keep non-number speaker IDs stable
+
         if raw not in speaker_map:
-            speaker_map[raw] = len(speaker_map)
+            speaker_map[raw] = len(
+                speaker_map
+            )
 
         number = speaker_map[raw]
 
@@ -171,52 +249,96 @@ def _normalize_speaker(raw_speaker, speaker_map):
 
 
 # ============================================================
-# Extract legacy generate_content() transcription
+# EXTRACT DIARIZED TRANSCRIPTION
 # ============================================================
 
 def _extract_dialogues(response):
+    """
+    Extract diarized transcription from Gemini's
+    generate_content() response.
+    """
+
     dialogues = []
+
     speaker_map = {}
 
-    candidates = getattr(response, "candidates", None) or []
+    candidates = (
+        getattr(
+            response,
+            "candidates",
+            None,
+        )
+        or []
+    )
 
     if not candidates:
         return dialogues
 
-    content = getattr(candidates[0], "content", None)
+    content = getattr(
+        candidates[0],
+        "content",
+        None,
+    )
 
     if content is None:
         return dialogues
 
-    parts = getattr(content, "parts", None) or []
+    parts = (
+        getattr(
+            content,
+            "parts",
+            None,
+        )
+        or []
+    )
 
-    for part in parts:
+    print(
+        f"[transcribe] Response parts: {len(parts)}"
+    )
 
-        annotation = _get_audio_transcription(part)
+    for index, part in enumerate(parts):
+
+        annotation = _get_audio_transcription(
+            part
+        )
 
         if annotation is None:
             continue
 
-        text = _extract_text(annotation)
+        text = _extract_text(
+            annotation
+        )
 
         if not text:
             continue
 
-        raw_speaker = _extract_speaker(annotation)
+        raw_speaker = _extract_speaker(
+            annotation
+        )
 
         speaker_label = _normalize_speaker(
             raw_speaker,
             speaker_map,
         )
 
-        start, end = _extract_times(annotation)
+        start, end = _extract_times(
+            annotation
+        )
 
         dialogues.append(
             {
                 "speaker_label": speaker_label,
                 "text": text,
-                "start": start if start is not None else 0.0,
-                "end": end if end is not None else 0.0,
+                "start": (
+                    start
+                    if start is not None
+                    else 0.0
+                ),
+                "end": (
+                    end
+                    if end is not None
+                    else 0.0
+                ),
             }
         )
 
@@ -224,95 +346,136 @@ def _extract_dialogues(response):
 
 
 # ============================================================
-# Build transcript
+# TRANSCRIPT TEXT
 # ============================================================
 
 def _dialogues_to_text(dialogues):
+    """
+    Convert dialogue objects into readable transcript.
+    """
+
     lines = []
 
     for turn in dialogues:
-        speaker = turn["speaker_label"]
-        text = turn["text"].strip()
 
-        if text:
-            lines.append(f"{speaker}: {text}")
+        speaker = (
+            turn.get(
+                "speaker_label",
+                "SPEAKER_UNKNOWN",
+            )
+        )
+
+        text = str(
+            turn.get("text", "")
+        ).strip()
+
+        if not text:
+            continue
+
+        lines.append(
+            f"{speaker}: {text}"
+        )
 
     return "\n".join(lines)
 
 
 # ============================================================
-# Gemini transcript verification
+# JSON EXTRACTION
 # ============================================================
 
 def _extract_json(text):
     """
-    Gemini sometimes returns JSON inside ```json ... ```
+    Gemini may return JSON inside markdown fences.
     """
+
+    if not text:
+        return None
 
     text = text.strip()
 
-    if text.startswith("```"):
-        text = re.sub(
-            r"^```(?:json)?\s*",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        )
+    # Remove markdown code fence
+    text = re.sub(
+        r"^```(?:json)?\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
 
-        text = re.sub(
-            r"\s*```$",
-            "",
-            text,
-        )
+    text = re.sub(
+        r"\s*```$",
+        "",
+        text,
+    )
 
-    # Try direct JSON
+    # Direct JSON
     try:
         return json.loads(text)
+
     except Exception:
         pass
 
-    # Find JSON array
+    # JSON array
     start = text.find("[")
 
-    if start != -1:
-        end = text.rfind("]")
+    end = text.rfind("]")
 
-        if end != -1:
-            candidate = text[start:end + 1]
+    if start != -1 and end > start:
 
-            try:
-                return json.loads(candidate)
-            except Exception:
-                pass
+        candidate = text[
+            start:end + 1
+        ]
 
-    # Find JSON object
+        try:
+            return json.loads(
+                candidate
+            )
+
+        except Exception:
+            pass
+
+    # JSON object
     start = text.find("{")
 
-    if start != -1:
-        end = text.rfind("}")
+    end = text.rfind("}")
 
-        if end != -1:
-            candidate = text[start:end + 1]
+    if start != -1 and end > start:
 
-            try:
-                return json.loads(candidate)
-            except Exception:
-                pass
+        candidate = text[
+            start:end + 1
+        ]
+
+        try:
+            return json.loads(
+                candidate
+            )
+
+        except Exception:
+            pass
 
     return None
 
 
-def _validate_verified_dialogues(data, original_dialogues):
-    """
-    Validate Gemini's correction result.
+# ============================================================
+# VALIDATE VERIFICATION RESULT
+# ============================================================
 
-    We don't blindly trust Gemini.
-    Speaker labels and timestamps from the first
-    diarization pass remain authoritative where possible.
+def _validate_verified_dialogues(
+    data,
+    original_dialogues,
+):
+    """
+    Validate Gemini 3.6 verification output.
+
+    The verifier is allowed to fix text,
+    but speaker identity and timestamps from
+    the original diarization are preferred.
     """
 
     if isinstance(data, dict):
-        data = data.get("segments")
+
+        data = data.get(
+            "segments"
+        )
 
     if not isinstance(data, list):
         return None
@@ -325,56 +488,114 @@ def _validate_verified_dialogues(data, original_dialogues):
             continue
 
         text = str(
-            item.get("text", "")
+            item.get(
+                "text",
+                "",
+            )
         ).strip()
 
         if not text:
             continue
 
-        speaker = item.get("speaker_label")
+        # ----------------------------------------------------
+        # Speaker
+        # ----------------------------------------------------
+
+        speaker = item.get(
+            "speaker_label"
+        )
 
         if not speaker:
-            speaker = item.get("speaker")
+            speaker = item.get(
+                "speaker"
+            )
 
-        if not speaker and i < len(original_dialogues):
-            speaker = original_dialogues[i]["speaker_label"]
+        if (
+            not speaker
+            and i < len(original_dialogues)
+        ):
+            speaker = (
+                original_dialogues[i]
+                .get(
+                    "speaker_label",
+                    "SPEAKER_UNKNOWN",
+                )
+            )
 
         if not speaker:
             speaker = "SPEAKER_UNKNOWN"
 
-        # Normalize speaker naming from Gemini verifier
-        speaker_str = str(speaker).strip()
+        speaker = str(
+            speaker
+        ).strip()
 
         match = re.search(
             r"(\d+)$",
-            speaker_str,
+            speaker,
         )
 
         if match:
-            speaker_str = (
-                f"SPEAKER_{int(match.group(1)):02d}"
+
+            speaker = (
+                f"SPEAKER_"
+                f"{int(match.group(1)):02d}"
             )
+
+        # ----------------------------------------------------
+        # Timestamps
+        # ----------------------------------------------------
 
         if i < len(original_dialogues):
 
-            original = original_dialogues[i]
-
-            start = original["start"]
-            end = original["end"]
-
-        else:
+            original = (
+                original_dialogues[i]
+            )
 
             start = float(
-                item.get("start", 0.0) or 0.0
+                original.get(
+                    "start",
+                    0.0,
+                )
+                or 0.0
             )
 
             end = float(
-                item.get("end", 0.0) or 0.0
+                original.get(
+                    "end",
+                    0.0,
+                )
+                or 0.0
             )
+
+        else:
+
+            try:
+                start = float(
+                    item.get(
+                        "start",
+                        0.0,
+                    )
+                    or 0.0
+                )
+
+            except Exception:
+                start = 0.0
+
+            try:
+                end = float(
+                    item.get(
+                        "end",
+                        0.0,
+                    )
+                    or 0.0
+                )
+
+            except Exception:
+                end = 0.0
 
         cleaned.append(
             {
-                "speaker_label": speaker_str,
+                "speaker_label": speaker,
                 "text": text,
                 "start": start,
                 "end": end,
@@ -387,22 +608,27 @@ def _validate_verified_dialogues(data, original_dialogues):
     return cleaned
 
 
+# ============================================================
+# GEMINI 3.6 VERIFICATION
+# ============================================================
+
 def _verify_transcript_with_gemini(
     uploaded_file,
     draft_dialogues,
 ):
     """
-    Second Gemini pass.
+    Gemini 3.6 Flash verifies the original audio.
 
-    Purpose:
-      - prevent English -> Urdu transliteration
-      - detect omitted utterances where possible
-      - preserve Urdu as Urdu
-      - preserve English as English
-      - preserve code-switching
-      - keep diarization labels from first pass
+    IMPORTANT:
+    This is NOT a translation step.
 
-    This is NOT the primary diarization pass.
+    It is specifically instructed to:
+      - preserve English
+      - preserve Urdu
+      - preserve code switching
+      - recover missing speech
+      - keep speaker labels
+      - keep chronological order
     """
 
     if not draft_dialogues:
@@ -413,70 +639,126 @@ def _verify_transcript_with_gemini(
     )
 
     prompt = f"""
-You are a professional meeting-transcript verification system.
+You are a professional meeting transcription
+verification system.
 
-The audio is the ORIGINAL source of truth.
+The ORIGINAL AUDIO is the source of truth.
 
-A first Gemini transcription/diarization pass produced the draft
-transcript below.
+A first Gemini 3.5 Transcribe pass produced
+the draft transcript below.
 
-Your job is to listen to the audio and correct the draft.
+You must LISTEN TO THE ORIGINAL AUDIO and
+correct the draft transcript.
 
-CRITICAL RULES:
+==================================================
+LANGUAGE RULES
+==================================================
 
-1. DO NOT translate anything.
+1. DO NOT TRANSLATE.
 
 2. Preserve the language actually spoken.
 
-3. If a person speaks English, write English using LATIN/ENGLISH
-   characters.
+3. ENGLISH MUST REMAIN ENGLISH.
 
-   Example:
-   "Perfect, mostly Excel"
-   MUST remain:
-   "Perfect, mostly Excel"
+If the speaker says:
 
-   NOT:
-   "پرفیکٹ، موسٹلی ایکسل"
+"Exactly, the requirements are clear."
 
-4. If a person speaks Urdu, write Urdu in Urdu script.
+write:
 
-5. If the speaker switches between Urdu and English, preserve the
-   switching exactly.
+"Exactly, the requirements are clear."
+
+DO NOT write:
+
+"ایگزیکٹلی، دی ریکوائرمنٹس آر کلیئر"
+
+4. URDU MUST REMAIN URDU.
+
+If the speaker speaks Urdu, write Urdu
+using Urdu script.
+
+5. PRESERVE CODE-SWITCHING.
 
 Example:
 
-"We need to finalize the requirements, phir implementation
-start karenge."
+"We need to finalize the requirements,
+phir implementation start karenge."
 
-Do NOT convert the whole sentence into Urdu script.
+Keep the English portion in Latin characters
+and the Urdu portion in Urdu script.
 
-6. Do not summarize.
+DO NOT convert the complete sentence
+into Urdu script.
 
-7. Do not shorten.
+6. Do not transliterate English words
+into Urdu script.
 
-8. Do not remove short utterances such as:
-   "Yes"
-   "Ji"
-   "Right"
-   "Exactly"
-   "Okay"
+7. Do not translate Urdu into English.
 
-9. The audio is the source of truth. If the draft missed an audible
-   sentence or turn, restore it.
+==================================================
+COMPLETENESS
+==================================================
 
-10. Do not invent speech that is not present in the audio.
+8. The final transcript must contain
+EVERY AUDIBLE UTTERANCE.
 
-11. Preserve speaker identity from the draft diarization.
-    Do NOT rename SPEAKER_00, SPEAKER_01, etc.
+9. If the draft completely missed an
+English sentence, recover it from the audio.
 
-12. Preserve chronological order.
+10. If the draft missed a short English
+response such as:
 
-13. Preserve timestamps where they already exist in the draft.
+"Yes"
+"Okay"
+"Right"
+"Exactly"
+"Perfect"
+"Sure"
 
-14. Do not combine unrelated turns just to make the transcript shorter.
+restore it if it is audible.
 
-15. Every audible conversational turn should be represented.
+11. Do not summarize.
+
+12. Do not shorten.
+
+13. Do not remove speech merely because
+it is short.
+
+14. Do not invent speech that is not audible.
+
+==================================================
+SPEAKERS
+==================================================
+
+15. Preserve the existing speaker labels.
+
+16. Do NOT rename:
+
+SPEAKER_00
+SPEAKER_01
+SPEAKER_02
+
+17. Keep the chronological order.
+
+==================================================
+TIMESTAMPS
+==================================================
+
+18. Preserve the original timestamps
+whenever possible.
+
+==================================================
+IMPORTANT
+==================================================
+
+The draft may contain Urdu transliteration
+where the speaker actually spoke English.
+
+Correct this by LISTENING TO THE AUDIO.
+
+Do not simply copy the draft.
+
+The AUDIO is more important than the draft.
 
 Return ONLY valid JSON.
 
@@ -499,7 +781,7 @@ DRAFT TRANSCRIPT:
     try:
 
         print(
-            f"[transcribe] Running Gemini transcript verification "
+            f"[transcribe] Verifying transcript "
             f"with {VERIFY_MODEL}..."
         )
 
@@ -521,33 +803,47 @@ DRAFT TRANSCRIPT:
         )
 
         if not result_text:
+
             print(
-                "[transcribe] Verification returned empty response."
+                "[transcribe] "
+                "Verification returned empty response."
             )
+
             return draft_dialogues
 
-        data = _extract_json(result_text)
+        data = _extract_json(
+            result_text
+        )
 
         if data is None:
+
             print(
-                "[transcribe] Could not parse verifier JSON."
+                "[transcribe] "
+                "Could not parse verifier JSON."
             )
+
             return draft_dialogues
 
-        verified = _validate_verified_dialogues(
-            data,
-            draft_dialogues,
+        verified = (
+            _validate_verified_dialogues(
+                data,
+                draft_dialogues,
+            )
         )
 
         if not verified:
+
             print(
-                "[transcribe] Verification result invalid."
+                "[transcribe] "
+                "Verification result invalid."
             )
+
             return draft_dialogues
 
         print(
-            f"[transcribe] Verification complete: "
-            f"{len(draft_dialogues)} -> {len(verified)} segments"
+            "[transcribe] Verification complete: "
+            f"{len(draft_dialogues)} -> "
+            f"{len(verified)} segments"
         )
 
         return verified
@@ -555,16 +851,48 @@ DRAFT TRANSCRIPT:
     except Exception as e:
 
         print(
-            f"[transcribe] Verification failed: {e}"
+            "[transcribe] Verification failed:"
+            f" {e}"
         )
 
-        # Don't destroy a working transcription if the
-        # verification model temporarily fails.
+        # Never destroy the original transcript
         return draft_dialogues
 
 
 # ============================================================
-# Main transcription function
+# AUDIO DURATION
+# ============================================================
+
+def _get_audio_file_duration(
+    audio_path: str,
+) -> float:
+
+    try:
+
+        audio = MutagenFile(
+            audio_path
+        )
+
+        if (
+            audio is not None
+            and audio.info is not None
+        ):
+            return float(
+                audio.info.length
+            )
+
+    except Exception as e:
+
+        print(
+            "[transcribe] "
+            f"Could not read audio duration: {e}"
+        )
+
+    return 0.0
+
+
+# ============================================================
+# MAIN TRANSCRIPTION
 # ============================================================
 
 def transcribe(
@@ -573,28 +901,40 @@ def transcribe(
     speakers_expected: int | None = None,
 ):
     """
-    Primary transcription:
+    Primary pipeline:
 
+        Audio
+          ↓
         Gemini 3.5 Transcribe
-        -> diarization
-        -> timestamps
-        -> Gemini verification
+          ↓
+        Diarization
+          ↓
+        Speaker segments
+          ↓
+        Gemini 3.6 Flash verification
+          ↓
+        Final transcript
     """
 
     print(
         f"[transcribe] Uploading: {audio_path}"
     )
 
+    # --------------------------------------------------------
+    # Upload
+    # --------------------------------------------------------
+
     uploaded_file = client.files.upload(
         file=audio_path
     )
 
     print(
-        f"[transcribe] Uploaded: {uploaded_file.name}"
+        f"[transcribe] Uploaded: "
+        f"{uploaded_file.name}"
     )
 
     # --------------------------------------------------------
-    # Wait until Gemini has processed the audio
+    # Wait for Gemini processing
     # --------------------------------------------------------
 
     while True:
@@ -619,35 +959,59 @@ def transcribe(
             break
 
         print(
-            "[transcribe] Audio still processing..."
+            "[transcribe] "
+            "Audio still processing..."
         )
 
         time.sleep(3)
 
     print(
-        f"[transcribe] Audio ready: {state_name}"
+        f"[transcribe] Audio ready: "
+        f"{state_name}"
     )
 
     # --------------------------------------------------------
-    # Primary Gemini transcription
+    # IMPORTANT:
+    # Do NOT send vocabulary with diarization.
+    # --------------------------------------------------------
+
+    if vocabulary_hint:
+
+        print(
+            "[transcribe] Vocabulary hint "
+            "received but intentionally ignored "
+            "because diarization is enabled."
+        )
+
+    # --------------------------------------------------------
+    # Primary transcription prompt
     # --------------------------------------------------------
 
     prompt = """
-Transcribe the meeting completely and verbatim.
+Transcribe this meeting completely and verbatim.
 
-IMPORTANT LANGUAGE RULES:
+The meeting may contain:
 
-The meeting may contain Urdu, English, and Urdu-English code switching.
+- Urdu
+- English
+- Urdu-English code switching
 
-Preserve the language that is actually spoken.
+==================================================
+LANGUAGE
+==================================================
 
-If English is spoken, write English using Latin/English characters.
+Preserve the language actually spoken.
 
-For example:
+If English is spoken, write English using
+LATIN / ENGLISH characters.
+
+Example:
+
+Speaker says:
 
 "Exactly, the requirements are clear."
 
-MUST be written as:
+Write:
 
 "Exactly, the requirements are clear."
 
@@ -657,41 +1021,91 @@ NOT:
 
 If Urdu is spoken, write it in Urdu script.
 
-If the speaker switches languages inside one sentence, preserve
-that switching.
+If the speaker switches between Urdu and English
+inside one sentence, preserve that switching.
 
 Example:
 
-"We need to finalize the requirements, phir implementation
-start karenge."
+"We need to finalize the requirements,
+phir implementation start karenge."
 
-Do NOT translate it.
+Do NOT convert the entire sentence
+to Urdu script.
 
-Do NOT transliterate English words into Urdu script.
+Do NOT transliterate English into Urdu script.
 
-Do NOT summarize.
+Do NOT translate English into Urdu.
 
-Do NOT omit short responses.
+Do NOT translate Urdu into English.
 
-Capture every audible utterance.
+==================================================
+COMPLETENESS
+==================================================
+
+Transcribe every audible utterance.
+
+Do not summarize.
+
+Do not shorten.
+
+Do not omit:
+
+- short answers
+- confirmations
+- greetings
+- "Yes"
+- "Ji"
+- "Okay"
+- "Right"
+- "Exactly"
+- "Perfect"
+- "Sure"
+
+English speech must NOT be omitted.
+
+If an English sentence is audible,
+include it in the transcript.
+
+==================================================
+DIARIZATION
+==================================================
 
 Perform automatic speaker diarization.
 
-Do not assume a fixed number of speakers.
-
-Use speaker labels such as SPEAKER_00, SPEAKER_01, SPEAKER_02.
-
 Keep different speakers separate.
 
-Preserve timestamps for each segment.
+Use labels such as:
+
+SPEAKER_00
+SPEAKER_01
+SPEAKER_02
+
+Do not merge different speakers
+into one speaker.
+
+==================================================
+TIMESTAMPS
+==================================================
+
+Preserve timestamps for each spoken segment.
+
+Keep the transcript in chronological order.
+
+The output must represent the actual meeting,
+not a summary of the meeting.
 """
 
-    # Do not pass custom vocabulary when using diarization/timestamps.
-    # This is intentionally ignored for this transcription mode.
+    # --------------------------------------------------------
+    # Gemini 3.5 Transcribe
+    # --------------------------------------------------------
 
     print(
-        "[transcribe] Generating transcript with "
-        "Gemini 3.5 Transcribe..."
+        "[transcribe] Generating transcript "
+        "with Gemini 3.5 Transcribe..."
+    )
+
+    print(
+        "[transcribe] Diarization: ON"
     )
 
     response = client.models.generate_content(
@@ -723,14 +1137,13 @@ Preserve timestamps for each segment.
     )
 
     print(
-        f"[transcribe] Response parts: "
-        f"{len(getattr(response.candidates[0].content, 'parts', []) or [])}"
-    )
-
-    print(
         f"[transcribe] Draft transcript segments: "
         f"{len(dialogues)}"
     )
+
+    # --------------------------------------------------------
+    # Fail clearly if Gemini returned nothing
+    # --------------------------------------------------------
 
     if not dialogues:
 
@@ -741,44 +1154,85 @@ Preserve timestamps for each segment.
         )
 
         print(
-            "[transcribe] WARNING: No audio transcription "
-            "parts found."
+            "[transcribe] WARNING: "
+            "No audio transcription parts found."
         )
 
         if response_text:
+
             print(
                 "[transcribe] Gemini text response:"
             )
-            print(response_text[:2000])
+
+            print(
+                response_text[:3000]
+            )
 
         raise RuntimeError(
-            "Gemini returned no diarized transcription segments."
+            "Gemini returned no diarized "
+            "transcription segments."
         )
 
     # --------------------------------------------------------
-    # Gemini verification
+    # Print draft speaker information
+    # --------------------------------------------------------
+
+    draft_speakers = sorted(
+        {
+            turn.get(
+                "speaker_label"
+            )
+            for turn in dialogues
+            if turn.get(
+                "speaker_label"
+            )
+        }
+    )
+
+    print(
+        "[transcribe] Draft speakers: "
+        f"{draft_speakers}"
+    )
+
+    # --------------------------------------------------------
+    # Verification
     # --------------------------------------------------------
 
     if VERIFY_TRANSCRIPT:
 
-        dialogues = _verify_transcript_with_gemini(
-            uploaded_file,
-            dialogues,
+        dialogues = (
+            _verify_transcript_with_gemini(
+                uploaded_file,
+                dialogues,
+            )
+        )
+
+    else:
+
+        print(
+            "[transcribe] "
+            "Transcript verification disabled."
         )
 
     # --------------------------------------------------------
     # Final transcript
     # --------------------------------------------------------
 
-    transcript_text = _dialogues_to_text(
-        dialogues
+    transcript_text = (
+        _dialogues_to_text(
+            dialogues
+        )
     )
 
     speakers = sorted(
         {
-            turn["speaker_label"]
+            turn.get(
+                "speaker_label"
+            )
             for turn in dialogues
-            if turn.get("speaker_label")
+            if turn.get(
+                "speaker_label"
+            )
         }
     )
 
@@ -793,39 +1247,53 @@ Preserve timestamps for each segment.
     )
 
     print(
-        f"[transcribe] Speakers detected: "
+        "[transcribe] Speakers detected: "
         f"{speakers}"
     )
 
-        # --------------------------------------------------------
-    # Compute duration from the last segment's end timestamp
+    # --------------------------------------------------------
+    # Duration
     # --------------------------------------------------------
 
-        # Prefer actual audio file duration over last-segment timestamp
-    file_duration = _get_audio_file_duration(audio_path)
+    file_duration = (
+        _get_audio_file_duration(
+            audio_path
+        )
+    )
+
+    segment_duration = 0.0
 
     if dialogues:
-        segment_duration = max((turn.get("end") or 0.0) for turn in dialogues)
-    else:
-        segment_duration = 0.0
 
-    duration_seconds = file_duration if file_duration > 0 else segment_duration
+        segment_duration = max(
+            (
+                float(
+                    turn.get(
+                        "end",
+                        0.0,
+                    )
+                    or 0.0
+                )
+                for turn in dialogues
+            ),
+            default=0.0,
+        )
 
-    print(f"[transcribe] File duration: {file_duration:.1f}s, segment-based: {segment_duration:.1f}s")
+    duration_seconds = (
+        file_duration
+        if file_duration > 0
+        else segment_duration
+    )
+
+    print(
+        f"[transcribe] File duration: "
+        f"{file_duration:.1f}s, "
+        f"segment-based: "
+        f"{segment_duration:.1f}s"
+    )
 
     return (
         transcript_text,
         duration_seconds,
         dialogues,
     )
-
-def _get_audio_file_duration(audio_path: str) -> float:
-    try:
-        audio = MutagenFile(audio_path)
-        if audio is not None and audio.info is not None:
-            return float(audio.info.length)
-    except Exception as e:
-        print(f"[transcribe] Could not read audio file duration: {e}")
-    return 0.0
-
-   

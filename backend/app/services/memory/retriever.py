@@ -43,7 +43,7 @@ def answer_question(
 
     hits = search(
         vector,
-        limit=25,
+        limit=15,
         client_id=client_id,
         project_id=project_id,
         allowed_projects=allowed_projects,
