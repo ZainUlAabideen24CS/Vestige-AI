@@ -23,14 +23,13 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
 
         <Route
-          path="/set-new-password"
-          element={
-            <RequireAuth>
-              <SetNewPassword />
-            </RequireAuth>
-          }
-        />
-
+  path="/set-new-password"
+  element={
+    <RequireAuth withLayout={false}>
+      <SetNewPassword />
+    </RequireAuth>
+  }
+/>
         <Route
           path="/clients"
           element={
