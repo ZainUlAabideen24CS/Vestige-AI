@@ -1,4 +1,5 @@
 import { useState } from "react";
+
 import { useParams, Link } from "react-router-dom";
 
 import {
@@ -8,7 +9,9 @@ import {
 } from "../api/hooks/useClients";
 
 import { useCurrentUser } from "../api/hooks/useCurrentUser";
+
 import { useWorkLogs } from "../api/hooks/useWorkLogs";
+
 import { useUsers } from "../api/hooks/useUsers";
 
 import {
@@ -16,8 +19,10 @@ import {
   usePayments,
   useCreateDelivery,
   useUpdateDelivery,
+  useDeleteDelivery,
   useCreatePayment,
   useUpdatePayment,
+  useDeletePayment,
   useProjectMembers,
   useAddProjectMember,
   useRemoveProjectMember,
@@ -39,6 +44,7 @@ const selectClass =
 
 export default function ProjectDetail() {
   const { id } = useParams();
+
   const projectId = Number(id);
 
   // ============================================================
@@ -66,22 +72,56 @@ export default function ProjectDetail() {
   } = useProject(projectId);
 
   // ============================================================
-  // PROJECT PERMISSIONS
-  // ============================================================
-
-  const canEdit =
-    me?.role === "admin" ||
-    me?.role === "manager";
-
-  const canSeeBudget = canEdit;
-
-  // ============================================================
-  // OTHER DATA
+  // CLIENT
   // ============================================================
 
   const { data: client } = useClient(
     project?.client_id ?? 0
   );
+
+  // ============================================================
+  // PROJECT PERMISSIONS
+  // ============================================================
+
+  const isAdmin =
+    me?.role === "admin";
+
+  const isProjectManager =
+    me?.role === "manager" &&
+    project?.manager_id === me?.id;
+
+  const isAccountManager =
+    me?.role === "manager" &&
+    client?.account_manager_id === me?.id;
+
+  // Project editing:
+  // Admin + assigned Project Manager
+  const canEditProject =
+    isAdmin || isProjectManager;
+
+  // Budget:
+  // Admin + Account Manager
+  const canSeeBudget =
+    isAdmin || isAccountManager;
+
+  // Delivery create/edit:
+  // Admin + assigned Project Manager
+  const canManageDeliveries =
+    isAdmin || isProjectManager;
+
+  // Payment visibility:
+  // Admin + Account Manager
+  const canSeePayments =
+    isAdmin || isAccountManager;
+
+  // Payment create/edit:
+  // Admin + Account Manager
+  const canManagePayments =
+    isAdmin || isAccountManager;
+
+  // ============================================================
+  // OTHER DATA
+  // ============================================================
 
   const { data: logs } = useWorkLogs({
     project_id: projectId,
@@ -94,7 +134,7 @@ export default function ProjectDetail() {
   const { data: payments } =
     usePayments(
       projectId,
-      canEdit
+      canSeePayments
     );
 
   // ============================================================
@@ -107,7 +147,8 @@ export default function ProjectDetail() {
     isError: membersError,
   } = useProjectMembers(projectId);
 
-  const members = membersData?.members ?? [];
+  const members =
+    membersData?.members ?? [];
 
   const canManageMembers =
     membersData?.can_manage_members ?? false;
@@ -144,11 +185,17 @@ export default function ProjectDetail() {
   const updateDelivery =
     useUpdateDelivery(projectId);
 
+  const deleteDelivery =
+    useDeleteDelivery(projectId);
+
   const createPayment =
     useCreatePayment(projectId);
 
   const updatePayment =
     useUpdatePayment(projectId);
+
+  const deletePayment =
+    useDeletePayment(projectId);
 
   // ============================================================
   // LOCAL STATE
@@ -266,6 +313,53 @@ export default function ProjectDetail() {
   };
 
   // ============================================================
+  // DELETE DELIVERY
+  // ADMIN ONLY
+  // ============================================================
+
+  const handleDeleteDelivery = (
+    deliveryId: number,
+    title: string
+  ) => {
+    if (!isAdmin) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete delivery "${title}"?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    deleteDelivery.mutate(deliveryId);
+  };
+
+  // ============================================================
+  // DELETE PAYMENT
+  // ADMIN ONLY
+  // ============================================================
+
+  const handleDeletePayment = (
+    paymentId: number
+  ) => {
+    if (!isAdmin) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete this payment?"
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    deletePayment.mutate(paymentId);
+  };
+
+  // ============================================================
   // UI
   // ============================================================
 
@@ -295,9 +389,11 @@ export default function ProjectDetail() {
           <div className="p-4 sm:p-6">
 
             {/* Header */}
+
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
 
               <div className="min-w-0">
+
                 <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 break-words">
                   {project.name}
                 </h1>
@@ -310,10 +406,13 @@ export default function ProjectDetail() {
                     {client.company_name}
                   </Link>
                 )}
+
               </div>
 
               {/* Status + Edit */}
+
               <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+
                 <span
                   className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${
                     statusStyles[project.status] ??
@@ -323,8 +422,9 @@ export default function ProjectDetail() {
                   {project.status}
                 </span>
 
-                {canEdit && (
+                {canEditProject && (
                   <button
+                    type="button"
                     onClick={() =>
                       setShowEdit(true)
                     }
@@ -333,11 +433,15 @@ export default function ProjectDetail() {
                     Edit
                   </button>
                 )}
+
               </div>
             </div>
 
             {/* Project Information */}
+
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 text-sm">
+
+              {/* Tech Stack */}
 
               <div className="min-w-0">
                 <dt className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-1">
@@ -348,6 +452,8 @@ export default function ProjectDetail() {
                   {project.tech_stack ?? "—"}
                 </dd>
               </div>
+
+              {/* Budget */}
 
               {canSeeBudget && (
                 <div className="min-w-0">
@@ -365,6 +471,8 @@ export default function ProjectDetail() {
                 </div>
               )}
 
+              {/* Start Date */}
+
               <div>
                 <dt className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-1">
                   Start date
@@ -375,6 +483,8 @@ export default function ProjectDetail() {
                 </dd>
               </div>
 
+              {/* End Date */}
+
               <div>
                 <dt className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-1">
                   End date
@@ -384,11 +494,14 @@ export default function ProjectDetail() {
                   {project.end_date ?? "—"}
                 </dd>
               </div>
+
             </dl>
 
             {/* Description */}
+
             {project.description && (
               <div className="mt-6 pt-5 border-t border-slate-100">
+
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-1">
                   Description
                 </p>
@@ -396,8 +509,10 @@ export default function ProjectDetail() {
                 <p className="text-sm text-slate-700 leading-6 whitespace-pre-wrap break-words">
                   {project.description}
                 </p>
+
               </div>
             )}
+
           </div>
         </section>
 
@@ -408,8 +523,10 @@ export default function ProjectDetail() {
         <section className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-6 mb-6">
 
           <div className="mb-5">
+
             <h2 className="text-lg font-semibold text-slate-900">
               Team Members
+
               {members ? (
                 <span className="ml-1 text-slate-500 font-normal">
                   ({members.length})
@@ -420,9 +537,11 @@ export default function ProjectDetail() {
             <p className="text-sm text-slate-500 mt-1">
               Employees currently assigned to this project.
             </p>
+
           </div>
 
           {/* Member Error */}
+
           {membersError && (
             <div className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg p-3 mb-4">
               Could not load project members.
@@ -430,6 +549,7 @@ export default function ProjectDetail() {
           )}
 
           {/* Member Loading */}
+
           {membersLoading && (
             <p className="text-sm text-slate-500">
               Loading team members...
@@ -437,6 +557,7 @@ export default function ProjectDetail() {
           )}
 
           {/* No Members */}
+
           {!membersLoading &&
             members.length === 0 && (
               <div className="border border-dashed border-slate-200 rounded-lg p-5 text-center">
@@ -447,16 +568,21 @@ export default function ProjectDetail() {
             )}
 
           {/* Member List */}
+
           <div className="space-y-2">
+
             {members.map((member) => (
               <div
                 key={member.user_id}
                 className="border border-slate-100 rounded-lg p-3 sm:p-4 hover:bg-slate-50 transition-colors"
               >
+
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 
                   {/* User */}
+
                   <div className="min-w-0">
+
                     <p className="text-sm font-semibold text-slate-900 break-words">
                       {member.full_name}
                     </p>
@@ -464,10 +590,13 @@ export default function ProjectDetail() {
                     <p className="text-xs text-slate-500 mt-0.5 break-all">
                       {member.email}
                     </p>
+
                   </div>
 
                   {/* Role + Remove */}
+
                   <div className="flex items-center justify-between sm:justify-end gap-3">
+
                     <span
                       className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
                         member.role_on_project ===
@@ -500,10 +629,14 @@ export default function ProjectDetail() {
                             : "Remove"}
                         </button>
                       )}
+
                   </div>
+
                 </div>
+
               </div>
             ))}
+
           </div>
 
           {/* ====================================================
@@ -569,6 +702,7 @@ export default function ProjectDetail() {
                       ? "Adding..."
                       : "Add"}
                   </button>
+
                 </div>
               )}
 
@@ -579,8 +713,10 @@ export default function ProjectDetail() {
                     No available employees to add.
                   </p>
                 )}
+
             </div>
           )}
+
         </section>
 
         {/* ======================================================
@@ -589,21 +725,31 @@ export default function ProjectDetail() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
 
-          {/* DELIVERIES */}
+          {/* ====================================================
+              DELIVERIES
+          ==================================================== */}
+
           <section className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-5">
 
             <div className="flex items-center justify-between gap-3 mb-4">
+
               <h3 className="text-sm font-semibold text-slate-900">
+
                 Deliveries
+
                 {deliveries ? (
                   <span className="ml-1 text-slate-500 font-normal">
                     ({deliveries.length})
                   </span>
                 ) : null}
+
               </h3>
 
-              {canEdit && (
+              {/* Only Admin + Project Manager */}
+
+              {canManageDeliveries && (
                 <button
+                  type="button"
                   onClick={() =>
                     setShowDelivery(true)
                   }
@@ -612,7 +758,10 @@ export default function ProjectDetail() {
                   + Add
                 </button>
               )}
+
             </div>
+
+            {/* Empty State */}
 
             {deliveries &&
               deliveries.length === 0 && (
@@ -622,14 +771,19 @@ export default function ProjectDetail() {
               )}
 
             <div className="space-y-3">
+
               {deliveries?.map((d) => (
                 <div
                   key={d.id}
                   className="border border-slate-100 rounded-lg p-3"
                 >
+
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 
+                    {/* Delivery Info */}
+
                     <div className="min-w-0">
+
                       <p className="text-sm font-medium text-slate-900 break-words">
                         {d.title}
                       </p>
@@ -639,82 +793,141 @@ export default function ProjectDetail() {
                           ? `Due ${d.due_date}`
                           : "No due date"}
                       </p>
+
+                      {d.description && (
+                        <p className="text-xs text-slate-500 mt-1 break-words">
+                          {d.description}
+                        </p>
+                      )}
+
                     </div>
 
-                    {canEdit ? (
-                      <select
-                        value={d.status}
-                        onChange={(e) =>
-                          updateDelivery.mutate({
-                            id: d.id,
-                            status:
-                              e.target.value,
-                          })
-                        }
-                        className={`${selectClass} w-full sm:w-auto`}
-                      >
-                        <option value="pending">
-                          pending
-                        </option>
+                    {/* Delivery Controls */}
 
-                        <option value="in_progress">
-                          in_progress
-                        </option>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
 
-                        <option value="delivered">
-                          delivered
-                        </option>
+                      {/* Delivery Status */}
 
-                        <option value="accepted">
-                          accepted
-                        </option>
-                      </select>
-                    ) : (
-                      <span
-                        className={`self-start sm:self-auto px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
-                          d.status ===
-                            "accepted" ||
-                          d.status ===
-                            "delivered"
-                            ? "bg-green-100 text-green-800"
-                            : d.status ===
-                              "in_progress"
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {d.status}
-                      </span>
-                    )}
+                      {canManageDeliveries ? (
+                        <select
+                          value={d.status}
+                          onChange={(e) =>
+                            updateDelivery.mutate({
+                              id: d.id,
+                              status:
+                                e.target.value,
+                            })
+                          }
+                          disabled={
+                            updateDelivery.isPending
+                          }
+                          className={`${selectClass} w-full sm:w-auto`}
+                        >
+                          <option value="pending">
+                            pending
+                          </option>
+
+                          <option value="in_progress">
+                            in_progress
+                          </option>
+
+                          <option value="delivered">
+                            delivered
+                          </option>
+
+                          <option value="accepted">
+                            accepted
+                          </option>
+                        </select>
+                      ) : (
+                        <span
+                          className={`self-start sm:self-auto px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
+                            d.status ===
+                              "accepted" ||
+                            d.status ===
+                              "delivered"
+                              ? "bg-green-100 text-green-800"
+                              : d.status ===
+                                "in_progress"
+                              ? "bg-blue-100 text-blue-800"
+                              : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {d.status}
+                        </span>
+                      )}
+
+                      {/* ADMIN ONLY DELETE */}
+
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleDeleteDelivery(
+                              d.id,
+                              d.title
+                            )
+                          }
+                          disabled={
+                            deleteDelivery.isPending
+                          }
+                          className="text-xs font-medium text-red-600 hover:text-red-800 disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {deleteDelivery.isPending
+                            ? "Deleting..."
+                            : "Delete"}
+                        </button>
+                      )}
+
+                    </div>
+
                   </div>
+
                 </div>
               ))}
+
             </div>
+
           </section>
 
-          {/* PAYMENTS */}
-          {canEdit && (
+          {/* ====================================================
+              PAYMENTS
+          ==================================================== */}
+
+          {canSeePayments && (
             <section className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-5">
 
               <div className="flex items-center justify-between gap-3 mb-4">
+
                 <h3 className="text-sm font-semibold text-slate-900">
+
                   Payments
+
                   {payments ? (
                     <span className="ml-1 text-slate-500 font-normal">
                       ({payments.length})
                     </span>
                   ) : null}
+
                 </h3>
 
-                <button
-                  onClick={() =>
-                    setShowPayment(true)
-                  }
-                  className="text-xs font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap"
-                >
-                  + Add
-                </button>
+                {/* Admin + Account Manager */}
+
+                {canManagePayments && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowPayment(true)
+                    }
+                    className="text-xs font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap"
+                  >
+                    + Add
+                  </button>
+                )}
+
               </div>
+
+              {/* Empty State */}
 
               {payments &&
                 payments.length === 0 && (
@@ -724,14 +937,19 @@ export default function ProjectDetail() {
                 )}
 
               <div className="space-y-3">
+
                 {payments?.map((p) => (
                   <div
                     key={p.id}
                     className="border border-slate-100 rounded-lg p-3"
                   >
+
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 
+                      {/* Payment Info */}
+
                       <div className="min-w-0">
+
                         <p className="text-sm font-medium text-slate-900">
                           {p.currency}{" "}
                           {Number(
@@ -746,41 +964,85 @@ export default function ProjectDetail() {
                           {p.due_date &&
                             ` · due ${p.due_date}`}
                         </p>
+
                       </div>
 
-                      <select
-                        value={p.status}
-                        onChange={(e) =>
-                          updatePayment.mutate({
-                            id: p.id,
-                            status:
-                              e.target.value,
-                          })
-                        }
-                        className={`${selectClass} w-full sm:w-auto`}
-                      >
-                        <option value="pending">
-                          pending
-                        </option>
+                      {/* Payment Controls */}
 
-                        <option value="invoiced">
-                          invoiced
-                        </option>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
 
-                        <option value="paid">
-                          paid
-                        </option>
+                        {/* Payment Status */}
 
-                        <option value="overdue">
-                          overdue
-                        </option>
-                      </select>
+                        {canManagePayments ? (
+                          <select
+                            value={p.status}
+                            onChange={(e) =>
+                              updatePayment.mutate({
+                                id: p.id,
+                                status:
+                                  e.target.value,
+                              })
+                            }
+                            disabled={
+                              updatePayment.isPending
+                            }
+                            className={`${selectClass} w-full sm:w-auto`}
+                          >
+                            <option value="pending">
+                              pending
+                            </option>
+
+                            <option value="invoiced">
+                              invoiced
+                            </option>
+
+                            <option value="paid">
+                              paid
+                            </option>
+
+                            <option value="overdue">
+                              overdue
+                            </option>
+                          </select>
+                        ) : (
+                          <span className="self-start sm:self-auto px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                            {p.status}
+                          </span>
+                        )}
+
+                        {/* ADMIN ONLY DELETE */}
+
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDeletePayment(
+                                p.id
+                              )
+                            }
+                            disabled={
+                              deletePayment.isPending
+                            }
+                            className="text-xs font-medium text-red-600 hover:text-red-800 disabled:opacity-50 whitespace-nowrap"
+                          >
+                            {deletePayment.isPending
+                              ? "Deleting..."
+                              : "Delete"}
+                          </button>
+                        )}
+
+                      </div>
+
                     </div>
+
                   </div>
                 ))}
+
               </div>
+
             </section>
           )}
+
         </div>
 
         {/* ======================================================
@@ -788,18 +1050,23 @@ export default function ProjectDetail() {
         ====================================================== */}
 
         <div className="mb-3">
+
           <h2 className="text-lg font-semibold text-slate-900">
+
             Work logs
+
             {logs ? (
               <span className="ml-1 text-slate-500 font-normal">
                 ({logs.length})
               </span>
             ) : null}
+
           </h2>
 
           <p className="text-sm text-slate-500 mt-0.5">
             Recent activity recorded on this project.
           </p>
+
         </div>
 
         <div className="space-y-3">
@@ -820,6 +1087,7 @@ export default function ProjectDetail() {
             >
 
               {/* Log Header */}
+
               <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-3">
 
                 <p className="text-sm font-semibold text-slate-900">
@@ -835,16 +1103,20 @@ export default function ProjectDetail() {
                       log.hours
                     )}h`}
                 </p>
+
               </div>
 
               {/* Summary */}
+
               <p className="text-sm text-slate-700 leading-6 mb-3 break-words">
                 {log.summary}
               </p>
 
               {/* Technologies */}
+
               {log.technologies && (
                 <div className="flex flex-wrap gap-1.5 mb-3">
+
                   {log.technologies
                     .split(",")
                     .map((t) => (
@@ -855,132 +1127,152 @@ export default function ProjectDetail() {
                         {t.trim()}
                       </span>
                     ))}
+
                 </div>
               )}
 
               {/* Blocker */}
+
               {log.blockers && (
                 <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 break-words">
+
                   <span className="font-medium">
                     Blocked:
                   </span>{" "}
+
                   {log.blockers}
+
                 </p>
               )}
+
             </article>
           ))}
+
         </div>
 
         {/* ======================================================
             EDIT PROJECT MODAL
         ====================================================== */}
 
-        <Modal
-          open={showEdit}
-          title="Edit project"
-          onClose={() =>
-            setShowEdit(false)
-          }
-        >
-          <ProjectForm
-            initial={project}
-            fixedClientId={
-              project.client_id
-            }
-            submitting={
-              updateProject.isPending
-            }
-            error={
-              updateProject.isError
-                ? "Could not save. Check the fields and try again."
-                : ""
-            }
-            onSubmit={(data) =>
-              updateProject.mutate(
-                data,
-                {
-                  onSuccess: () =>
-                    setShowEdit(false),
-                }
-              )
-            }
-            onCancel={() =>
+        {canEditProject && (
+          <Modal
+            open={showEdit}
+            title="Edit project"
+            onClose={() =>
               setShowEdit(false)
             }
-          />
-        </Modal>
+          >
+
+            <ProjectForm
+              initial={project}
+              fixedClientId={
+                project.client_id
+              }
+              submitting={
+                updateProject.isPending
+              }
+              error={
+                updateProject.isError
+                  ? "Could not save. Check the fields and try again."
+                  : ""
+              }
+              onSubmit={(data) =>
+                updateProject.mutate(
+                  data,
+                  {
+                    onSuccess: () =>
+                      setShowEdit(false),
+                  }
+                )
+              }
+              onCancel={() =>
+                setShowEdit(false)
+              }
+            />
+
+          </Modal>
+        )}
 
         {/* ======================================================
             ADD DELIVERY MODAL
         ====================================================== */}
 
-        <Modal
-          open={showDelivery}
-          title="Add delivery"
-          onClose={() =>
-            setShowDelivery(false)
-          }
-        >
-          <DeliveryForm
-            projectId={projectId}
-            submitting={
-              createDelivery.isPending
-            }
-            error={
-              createDelivery.isError
-                ? "Could not save. Check the fields and try again."
-                : ""
-            }
-            onSubmit={(d) =>
-              createDelivery.mutate(
-                d,
-                {
-                  onSuccess: () =>
-                    setShowDelivery(false),
-                }
-              )
-            }
-            onCancel={() =>
+        {canManageDeliveries && (
+          <Modal
+            open={showDelivery}
+            title="Add delivery"
+            onClose={() =>
               setShowDelivery(false)
             }
-          />
-        </Modal>
+          >
+
+            <DeliveryForm
+              projectId={projectId}
+              submitting={
+                createDelivery.isPending
+              }
+              error={
+                createDelivery.isError
+                  ? "Could not save. Check the fields and try again."
+                  : ""
+              }
+              onSubmit={(d) =>
+                createDelivery.mutate(
+                  d,
+                  {
+                    onSuccess: () =>
+                      setShowDelivery(false),
+                  }
+                )
+              }
+              onCancel={() =>
+                setShowDelivery(false)
+              }
+            />
+
+          </Modal>
+        )}
 
         {/* ======================================================
             ADD PAYMENT MODAL
         ====================================================== */}
 
-        <Modal
-          open={showPayment}
-          title="Add payment"
-          onClose={() =>
-            setShowPayment(false)
-          }
-        >
-          <PaymentForm
-            projectId={projectId}
-            submitting={
-              createPayment.isPending
-            }
-            error={
-              createPayment.isError
-                ? "Could not save. Check the fields and try again."
-                : ""
-            }
-            onSubmit={(d) =>
-              createPayment.mutate(
-                d,
-                {
-                  onSuccess: () =>
-                    setShowPayment(false),
-                }
-              )
-            }
-            onCancel={() =>
+        {canManagePayments && (
+          <Modal
+            open={showPayment}
+            title="Add payment"
+            onClose={() =>
               setShowPayment(false)
             }
-          />
-        </Modal>
+          >
+
+            <PaymentForm
+              projectId={projectId}
+              submitting={
+                createPayment.isPending
+              }
+              error={
+                createPayment.isError
+                  ? "Could not save. Check the fields and try again."
+                  : ""
+              }
+              onSubmit={(d) =>
+                createPayment.mutate(
+                  d,
+                  {
+                    onSuccess: () =>
+                      setShowPayment(false),
+                  }
+                )
+              }
+              onCancel={() =>
+                setShowPayment(false)
+              }
+            />
+
+          </Modal>
+        )}
+
       </div>
     </main>
   );

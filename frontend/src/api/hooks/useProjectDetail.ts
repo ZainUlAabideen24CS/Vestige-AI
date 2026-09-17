@@ -12,7 +12,6 @@ import type {
   ProjectMember,
 } from "../../types";
 
-
 // ============================================================
 // DELIVERIES
 // ============================================================
@@ -20,7 +19,6 @@ import type {
 export function useDeliveries(
   projectId: number
 ) {
-
   return useQuery({
     queryKey: [
       "deliveries",
@@ -28,7 +26,6 @@ export function useDeliveries(
     ],
 
     queryFn: async () => {
-
       const res =
         await api.get<Delivery[]>(
           "/deliveries",
@@ -47,6 +44,9 @@ export function useDeliveries(
   });
 }
 
+// ============================================================
+// CREATE DELIVERY
+// ============================================================
 
 export interface DeliveryInput {
   project_id: number;
@@ -56,27 +56,26 @@ export interface DeliveryInput {
   due_date?: string;
 }
 
-
 export function useCreateDelivery(
   projectId: number
 ) {
-
   const qc =
     useQueryClient();
 
   return useMutation({
-
     mutationFn: async (
       input: DeliveryInput
-    ) => (
-      await api.post(
-        "/deliveries",
-        input
-      )
-    ).data,
+    ) => {
+      const res =
+        await api.post<Delivery>(
+          "/deliveries",
+          input
+        );
+
+      return res.data;
+    },
 
     onSuccess: () => {
-
       qc.invalidateQueries({
         queryKey: [
           "deliveries",
@@ -87,33 +86,58 @@ export function useCreateDelivery(
   });
 }
 
+// ============================================================
+// UPDATE DELIVERY
+// ============================================================
+
+export interface DeliveryUpdateInput {
+  id: number;
+  status?: string;
+  title?: string;
+  description?: string;
+  due_date?: string;
+}
 
 export function useUpdateDelivery(
   projectId: number
 ) {
-
   const qc =
     useQueryClient();
 
   return useMutation({
-
     mutationFn: async ({
       id,
       status,
-    }: {
-      id: number;
-      status: string;
-    }) => (
-      await api.patch(
-        `/deliveries/${id}`,
-        {
-          status,
-        }
-      )
-    ).data,
+      title,
+      description,
+      due_date,
+    }: DeliveryUpdateInput) => {
+      const res =
+        await api.patch<Delivery>(
+          `/deliveries/${id}`,
+          {
+            ...(status !== undefined && {
+              status,
+            }),
+
+            ...(title !== undefined && {
+              title,
+            }),
+
+            ...(description !== undefined && {
+              description,
+            }),
+
+            ...(due_date !== undefined && {
+              due_date,
+            }),
+          }
+        );
+
+      return res.data;
+    },
 
     onSuccess: () => {
-
       qc.invalidateQueries({
         queryKey: [
           "deliveries",
@@ -124,6 +148,35 @@ export function useUpdateDelivery(
   });
 }
 
+// ============================================================
+// DELETE DELIVERY
+// ============================================================
+
+export function useDeleteDelivery(
+  projectId: number
+) {
+  const qc =
+    useQueryClient();
+
+  return useMutation({
+    mutationFn: async (
+      deliveryId: number
+    ) => {
+      await api.delete(
+        `/deliveries/${deliveryId}`
+      );
+    },
+
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: [
+          "deliveries",
+          projectId,
+        ],
+      });
+    },
+  });
+};
 
 // ============================================================
 // PAYMENTS
@@ -133,7 +186,6 @@ export function usePayments(
   projectId: number,
   enabled: boolean
 ) {
-
   return useQuery({
     queryKey: [
       "payments",
@@ -141,7 +193,6 @@ export function usePayments(
     ],
 
     queryFn: async () => {
-
       const res =
         await api.get<Payment[]>(
           "/payments",
@@ -162,6 +213,9 @@ export function usePayments(
   });
 }
 
+// ============================================================
+// CREATE PAYMENT
+// ============================================================
 
 export interface PaymentInput {
   project_id: number;
@@ -172,27 +226,26 @@ export interface PaymentInput {
   invoice_number?: string;
 }
 
-
 export function useCreatePayment(
   projectId: number
 ) {
-
   const qc =
     useQueryClient();
 
   return useMutation({
-
     mutationFn: async (
       input: PaymentInput
-    ) => (
-      await api.post(
-        "/payments",
-        input
-      )
-    ).data,
+    ) => {
+      const res =
+        await api.post<Payment>(
+          "/payments",
+          input
+        );
+
+      return res.data;
+    },
 
     onSuccess: () => {
-
       qc.invalidateQueries({
         queryKey: [
           "payments",
@@ -203,33 +256,64 @@ export function useCreatePayment(
   });
 }
 
+// ============================================================
+// UPDATE PAYMENT
+// ============================================================
+
+export interface PaymentUpdateInput {
+  id: number;
+  status?: string;
+  amount?: number;
+  currency?: string;
+  due_date?: string;
+  invoice_number?: string;
+}
 
 export function useUpdatePayment(
   projectId: number
 ) {
-
   const qc =
     useQueryClient();
 
   return useMutation({
-
     mutationFn: async ({
       id,
       status,
-    }: {
-      id: number;
-      status: string;
-    }) => (
-      await api.patch(
-        `/payments/${id}`,
-        {
-          status,
-        }
-      )
-    ).data,
+      amount,
+      currency,
+      due_date,
+      invoice_number,
+    }: PaymentUpdateInput) => {
+      const res =
+        await api.patch<Payment>(
+          `/payments/${id}`,
+          {
+            ...(status !== undefined && {
+              status,
+            }),
+
+            ...(amount !== undefined && {
+              amount,
+            }),
+
+            ...(currency !== undefined && {
+              currency,
+            }),
+
+            ...(due_date !== undefined && {
+              due_date,
+            }),
+
+            ...(invoice_number !== undefined && {
+              invoice_number,
+            }),
+          }
+        );
+
+      return res.data;
+    },
 
     onSuccess: () => {
-
       qc.invalidateQueries({
         queryKey: [
           "payments",
@@ -240,6 +324,35 @@ export function useUpdatePayment(
   });
 }
 
+// ============================================================
+// DELETE PAYMENT
+// ============================================================
+
+export function useDeletePayment(
+  projectId: number
+) {
+  const qc =
+    useQueryClient();
+
+  return useMutation({
+    mutationFn: async (
+      paymentId: number
+    ) => {
+      await api.delete(
+        `/payments/${paymentId}`
+      );
+    },
+
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: [
+          "payments",
+          projectId,
+        ],
+      });
+    },
+  });
+}
 
 // ============================================================
 // PROJECT MEMBERS
@@ -252,11 +365,9 @@ export interface ProjectMembersResponse {
   members: ProjectMember[];
 }
 
-
 export function useProjectMembers(
   projectId: number
 ) {
-
   return useQuery({
     queryKey: [
       "project-members",
@@ -264,7 +375,6 @@ export function useProjectMembers(
     ],
 
     queryFn: async () => {
-
       const res =
         await api.get<ProjectMembersResponse>(
           `/projects/${projectId}/members`
@@ -277,7 +387,6 @@ export function useProjectMembers(
   });
 }
 
-
 // ============================================================
 // ADD PROJECT MEMBER
 // ============================================================
@@ -285,25 +394,25 @@ export function useProjectMembers(
 export function useAddProjectMember(
   projectId: number
 ) {
-
   const qc =
     useQueryClient();
 
   return useMutation({
-
     mutationFn: async (
       userId: number
-    ) => (
-      await api.post(
-        `/projects/${projectId}/members`,
-        {
-          user_id: userId,
-        }
-      )
-    ).data,
+    ) => {
+      const res =
+        await api.post(
+          `/projects/${projectId}/members`,
+          {
+            user_id: userId,
+          }
+        );
+
+      return res.data;
+    },
 
     onSuccess: () => {
-
       qc.invalidateQueries({
         queryKey: [
           "project-members",
@@ -318,7 +427,6 @@ export function useAddProjectMember(
   });
 }
 
-
 // ============================================================
 // REMOVE PROJECT MEMBER
 // ============================================================
@@ -326,22 +434,22 @@ export function useAddProjectMember(
 export function useRemoveProjectMember(
   projectId: number
 ) {
-
   const qc =
     useQueryClient();
 
   return useMutation({
-
     mutationFn: async (
       userId: number
-    ) => (
-      await api.delete(
-        `/projects/${projectId}/members/${userId}`
-      )
-    ).data,
+    ) => {
+      const res =
+        await api.delete(
+          `/projects/${projectId}/members/${userId}`
+        );
+
+      return res.data;
+    },
 
     onSuccess: () => {
-
       qc.invalidateQueries({
         queryKey: [
           "project-members",
