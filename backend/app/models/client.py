@@ -15,6 +15,6 @@ class Client(Base):
     industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="active")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    lead_id: Mapped[int | None] = mapped_column(ForeignKey("leads.id"), nullable=True)
+    
     account_manager_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

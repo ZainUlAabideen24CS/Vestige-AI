@@ -1,8 +1,9 @@
+import time
 import os
+
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from google.genai import errors as genai_errors
 
 
 load_dotenv()
@@ -16,7 +17,14 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 GEMINI_MODEL = os.getenv(
     "GEMINI_TEXT_MODEL",
-    "gemini-3.6-flash"
+    "gemini-3.6-flash",
+)
+
+# Fallback model used when the primary model is temporarily
+# unavailable / overloaded.
+GEMINI_FALLBACK_MODEL = os.getenv(
+    "GEMINI_FALLBACK_TEXT_MODEL",
+    "gemini-3.5-flash-lite",
 )
 
 if not GEMINI_API_KEY:
@@ -31,12 +39,23 @@ client = genai.Client(
 
 
 # ============================================================
+# Retry Configuration
+# ============================================================
+
+MAX_RETRIES = 3
+
+# 8s, 16s, 24s
+RETRY_BASE_DELAY_SECONDS = 8.0
+
+
+# ============================================================
 # System Prompt
 # ============================================================
 
 SYSTEM_PROMPT = """You answer questions about a software agency's internal project history.
 
 Rules:
+
 - Answer ONLY from the provided context.
 - Never use outside knowledge.
 - If the context does not contain the answer, reply with ONLY this exact sentence:
@@ -46,6 +65,186 @@ Rules:
 - Do not invent names, dates, people, or technical details.
 - Do not assume information that is not present in the context.
 """
+
+
+# ============================================================
+# Helper: Check Whether Error Is Temporary
+# ============================================================
+
+def _is_overload_error(error: Exception) -> bool:
+    """
+    Detect temporary Gemini server overload/unavailability errors.
+    """
+
+    error_text = str(error).upper()
+
+    return (
+        "503" in error_text
+        or "UNAVAILABLE" in error_text
+        or "SERVICE UNAVAILABLE" in error_text
+        or "OVERLOADED" in error_text
+    )
+
+
+def _is_quota_error(error: Exception) -> bool:
+    """
+    Detect Gemini quota/rate-limit errors.
+    """
+
+    error_text = str(error).upper()
+
+    return (
+        "429" in error_text
+        or "RESOURCE_EXHAUSTED" in error_text
+        or "QUOTA" in error_text
+    )
+
+
+# ============================================================
+# Helper: Generate With One Model
+# ============================================================
+
+def _generate_with_model(
+    model: str,
+    prompt: str,
+    system_instruction: str,
+    max_output_tokens: int,
+    thinking_level: str,
+) -> str:
+    """
+    Generate content using one Gemini model.
+
+    Retries temporary 503/UNAVAILABLE errors.
+
+    Returns the generated text.
+
+    Raises the final exception if all retries fail.
+    """
+
+    last_error = None
+
+    for attempt in range(1, MAX_RETRIES + 1):
+
+        try:
+
+            print(
+                f"[llm] Using model: {model} "
+                f"(attempt {attempt}/{MAX_RETRIES})"
+            )
+
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    max_output_tokens=max_output_tokens,
+                    thinking_config=types.ThinkingConfig(
+                        thinking_level=thinking_level
+                    ),
+                ),
+            )
+
+            # ------------------------------------------------
+            # Debug information
+            # ------------------------------------------------
+
+            if response.candidates:
+
+                candidate = response.candidates[0]
+
+                print(
+                    f"[llm] finish_reason="
+                    f"{candidate.finish_reason}"
+                )
+
+            if hasattr(response, "usage_metadata"):
+
+                usage = response.usage_metadata
+
+                print(
+                    f"[llm] prompt_tokens="
+                    f"{getattr(usage, 'prompt_token_count', None)}"
+                )
+
+                print(
+                    f"[llm] output_tokens="
+                    f"{getattr(usage, 'candidates_token_count', None)}"
+                )
+
+                print(
+                    f"[llm] total_tokens="
+                    f"{getattr(usage, 'total_token_count', None)}"
+                )
+
+            # ------------------------------------------------
+            # Empty response protection
+            # ------------------------------------------------
+
+            if not response.text:
+
+                return (
+                    "I don't have enough information to answer that."
+                )
+
+            return response.text.strip()
+
+        except Exception as e:
+
+            last_error = e
+
+            # -----------------------------------------------
+            # Quota error
+            # -----------------------------------------------
+
+            if _is_quota_error(e):
+
+                print(
+                    f"[llm] Quota/rate-limit error on "
+                    f"{model}: {e}"
+                )
+
+                raise
+
+            # -----------------------------------------------
+            # Temporary overload
+            # -----------------------------------------------
+
+            if _is_overload_error(e):
+
+                if attempt < MAX_RETRIES:
+
+                    wait_time = (
+                        RETRY_BASE_DELAY_SECONDS * attempt
+                    )
+
+                    print(
+                        f"[llm] Model overloaded "
+                        f"(attempt {attempt}/{MAX_RETRIES}), "
+                        f"retrying in {wait_time:.0f}s..."
+                    )
+
+                    time.sleep(wait_time)
+
+                    continue
+
+                print(
+                    f"[llm] Model {model} remained unavailable "
+                    f"after {MAX_RETRIES} attempts."
+                )
+
+                raise
+
+            # -----------------------------------------------
+            # Other error
+            # -----------------------------------------------
+
+            print(
+                f"[llm] Error from {model}: {e}"
+            )
+
+            raise
+
+    raise last_error
 
 
 # ============================================================
@@ -59,60 +258,159 @@ def _generate(
     thinking_level: str = "low",
 ) -> str:
     """
-    thinking_level controls how many tokens Gemini 3.x models spend on
-    internal reasoning before writing the actual answer. The API
-    default is "high", which can silently eat most of the token
-    budget and leave little room for the visible output -- this is
-    what was causing truncated answers/summaries (e.g. cutting off
-    mid-sentence). "low" leaves far more budget for the real response.
+    Generate text using Gemini.
+
+    Primary:
+        gemini-3.6-flash
+
+    Fallback:
+        gemini-3.5-flash-lite
+
+    The primary model gets up to MAX_RETRIES attempts.
+    If it remains temporarily unavailable, the fallback model
+    is tried.
+
+    Quota errors are NOT silently switched around because quota
+    problems can affect the API key rather than only one model.
     """
 
+    # ========================================================
+    # 1. Try Primary Model
+    # ========================================================
+
     try:
-        response = client.models.generate_content(
+
+        print(
+            f"[llm] Trying primary model: "
+            f"{GEMINI_MODEL}"
+        )
+
+        return _generate_with_model(
             model=GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
+            prompt=prompt,
+            system_instruction=system_instruction,
+            max_output_tokens=max_output_tokens,
+            thinking_level=thinking_level,
+        )
+
+    except Exception as primary_error:
+
+        # ----------------------------------------------------
+        # Quota error
+        # ----------------------------------------------------
+
+        if _is_quota_error(primary_error):
+
+            print(
+                "[llm] Primary model quota/rate-limit error."
+            )
+
+            return (
+                "⚠️ You have exceeded your current quota. "
+                "Please check your Gemini API quota and billing details."
+            )
+
+        # ----------------------------------------------------
+        # Only use fallback for temporary overload
+        # ----------------------------------------------------
+
+        if not _is_overload_error(primary_error):
+
+            print(
+                f"[llm] Primary model failed with a non-overload "
+                f"error: {primary_error}"
+            )
+
+            return (
+                "⚠️ Something went wrong while generating "
+                "the answer. Please try again."
+            )
+
+        print(
+            f"[llm] Primary model {GEMINI_MODEL} is unavailable."
+        )
+
+        # ====================================================
+        # 2. Try Fallback Model
+        # ====================================================
+
+        if not GEMINI_FALLBACK_MODEL:
+
+            print(
+                "[llm] No fallback model configured."
+            )
+
+            return (
+                "⚠️ Gemini is temporarily unavailable. "
+                "Please try again later."
+            )
+
+        # Don't use the same model twice.
+        if GEMINI_FALLBACK_MODEL == GEMINI_MODEL:
+
+            print(
+                "[llm] Fallback model is the same as primary. "
+                "Skipping fallback."
+            )
+
+            return (
+                "⚠️ Gemini is temporarily unavailable. "
+                "Please try again later."
+            )
+
+        try:
+
+            print(
+                f"[llm] Switching to fallback model: "
+                f"{GEMINI_FALLBACK_MODEL}"
+            )
+
+            return _generate_with_model(
+                model=GEMINI_FALLBACK_MODEL,
+                prompt=prompt,
                 system_instruction=system_instruction,
                 max_output_tokens=max_output_tokens,
-                thinking_config=types.ThinkingConfig(
-                    thinking_level=thinking_level
-                ),
-            ),
-        )
-    except Exception as e:
-        error_text = str(e)
-        if "RESOURCE_EXHAUSTED" in error_text or "429" in error_text:
-            return "⚠️ You have exceeded your current quota. Please check your plan and billing details."
-        print(f"[llm] Unexpected error: {error_text}")
-        return "⚠️ Something went wrong while generating the answer. Please try again."
+                thinking_level=thinking_level,
+            )
 
-    # if response.candidates:
-    #     finish_reason = getattr(response.candidates[0], "finish_reason", None)
-    #     print(f"[llm] finish_reason={finish_reason}")
+        except Exception as fallback_error:
 
-    if response.candidates:
-     candidate = response.candidates[0]
-     print(f"[llm] finish_reason={candidate.finish_reason}")
+            # ------------------------------------------------
+            # Fallback quota
+            # ------------------------------------------------
 
-    if hasattr(response, "usage_metadata"):
-        usage = response.usage_metadata
-        print(
-            f"[llm] prompt_tokens="
-            f"{getattr(usage, 'prompt_token_count', None)}"
-        )
-        print(
-            f"[llm] output_tokens="
-            f"{getattr(usage, 'candidates_token_count', None)}"
-        )
-        print(
-            f"[llm] total_tokens="
-            f"{getattr(usage, 'total_token_count', None)}"
-        )
+            if _is_quota_error(fallback_error):
 
-    if not response.text:
-        return "I don't have enough information to answer that."
+                print(
+                    "[llm] Fallback model quota/rate-limit error."
+                )
 
-    return response.text.strip()
+                return (
+                    "⚠️ You have exceeded your current Gemini "
+                    "API quota. Please check your plan and "
+                    "billing details."
+                )
+
+            # ------------------------------------------------
+            # Both models unavailable
+            # ------------------------------------------------
+
+            print(
+                "[llm] Both primary and fallback models failed."
+            )
+
+            print(
+                f"[llm] Primary error: {primary_error}"
+            )
+
+            print(
+                f"[llm] Fallback error: {fallback_error}"
+            )
+
+            return (
+                "⚠️ Gemini is temporarily unavailable. "
+                "Please try again later."
+            )
 
 
 # ============================================================
@@ -125,6 +423,7 @@ def generate_answer(
 ) -> str:
 
     if not chunks:
+
         return "I don't have enough information to answer that."
 
     context = "\n\n---\n\n".join(
@@ -137,6 +436,7 @@ def generate_answer(
 {context}
 
 Question:
+
 {question}
 
 Answer:
@@ -153,7 +453,9 @@ Answer:
 # Search / Query Understanding
 # ============================================================
 
-def generate_search_query(question: str) -> str:
+def generate_search_query(
+    question: str,
+) -> str:
 
     prompt = f"""Convert the following user question into a concise
 semantic search query for retrieving relevant chunks from a
@@ -164,6 +466,7 @@ Do not answer the question.
 Return ONLY the search query.
 
 Question:
+
 {question}
 """
 
@@ -191,19 +494,24 @@ def identify_speaker_name(
     prompt = f"""We have a meeting transcript and a speaker label.
 
 Speaker label:
+
 {speaker_label}
 
 Transcript:
+
 {transcript}
 
 Determine the person's name ONLY if the transcript provides
 strong evidence for their name.
 
 Rules:
+
 - Never invent a person's name.
 - Use only information present in the transcript.
 - If the person's name cannot be determined, return exactly:
+
 Unknown
+
 - Return ONLY the person's name or Unknown.
 """
 
@@ -241,6 +549,7 @@ provides sufficient evidence.
 Return the result in this exact format:
 
 Speaker 1: Name
+
 Speaker 2: Name
 
 If a speaker's name cannot be determined, use:
@@ -248,6 +557,7 @@ If a speaker's name cannot be determined, use:
 Speaker 1: Unknown
 
 Rules:
+
 - Never invent names.
 - Use only information from the transcript.
 - Do not add explanations.
@@ -291,24 +601,38 @@ def generate_summary(
     max_output_tokens: int = 2200,
 ) -> str:
 
-    print(f"[llm] generate_summary max_output_tokens={max_output_tokens}")
+    print(
+        f"[llm] generate_summary "
+        f"max_output_tokens={max_output_tokens}"
+    )
 
     if not text or not text.strip():
+
         return ""
 
-    label = f"Title: {title}\n\n" if title else ""
+    label = (
+        f"Title: {title}\n\n"
+        if title
+        else ""
+    )
 
+    # ========================================================
     # Keep the complete meeting whenever possible.
-    # Avoid cutting off decisions/action items at the end.
+    # ========================================================
+
     max_input_chars = 30000
 
     if len(text) > max_input_chars:
+
         print(
             f"[llm] Summary input truncated: "
             f"{len(text)} chars -> {max_input_chars} chars"
         )
+
         trimmed_text = text[:max_input_chars]
+
     else:
+
         trimmed_text = text
 
     prompt = f"""{label}Content:
@@ -322,25 +646,30 @@ without reading the full transcript.
 Format your response EXACTLY like this:
 
 Overview:
+
 <3-5 complete sentences describing the meeting, participants,
 main purpose, major discussion, and overall outcome>
 
 Key Discussion Points:
+
 - <point 1>
 - <point 2>
 - <point 3>
 - <continue with all genuinely important discussion points>
 
 Decisions Made:
+
 - <decision 1>
 - <decision 2>
 - <continue with important decisions>
 
 Action Items:
+
 - <person> will <action> <deadline if mentioned>
 - <person> will <action> <deadline if mentioned>
 
 Open Questions / Unresolved:
+
 - <item 1>
 - <item 2>
 
@@ -356,12 +685,19 @@ Rules:
 - Do NOT stop after only 2-3 discussion points.
 - Every bullet must be a complete sentence.
 - Never end a bullet or sentence halfway.
+
 - If there are no action items, write:
+
   "No action items were assigned."
+
 - If there were no decisions, write:
+
   "No decisions were finalized."
+
 - If there are no unresolved questions, write:
+
   "None noted."
+
 - Make the summary detailed but avoid unnecessary repetition.
 """
 
@@ -369,9 +705,9 @@ Rules:
         prompt=prompt,
         system_instruction=(
             "You write detailed, complete and accurate meeting summaries "
-            "for an internal software agency knowledge base. The summary "
-            "must cover the important discussion, decisions, action items "
-            "and unresolved points from the provided content. "
+            "for an internal software agency knowledge base. "
+            "The summary must cover the important discussion, decisions, "
+            "action items and unresolved points from the provided content. "
             "Never invent information. "
             "Always finish every sentence and bullet point completely."
         ),

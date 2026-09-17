@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import time
 
 from google import genai
 from google.genai import types
@@ -16,6 +17,10 @@ MODEL = os.getenv(
     "GEMINI_TEXT_MODEL",
     "gemini-3.6-flash",
 )
+
+# Retry behavior for transient server overload (503 UNAVAILABLE)
+MAX_RETRIES = 3
+RETRY_BASE_DELAY_SECONDS = 8.0
 
 
 def _clean_name(name: str) -> str:
@@ -89,7 +94,8 @@ def _parse_json(text):
 
 def _fallback_mapping(turns):
     """
-    Safe fallback if Gemini fails.
+    Safe fallback if Gemini fails (including after retries are
+    exhausted on a persistent overload).
     """
 
     speakers = []
@@ -121,6 +127,46 @@ def _fallback_mapping(turns):
         }
 
     return result
+
+
+def _call_gemini_with_retry(prompt: str):
+    """
+    Calls Gemini for speaker identification, automatically retrying
+    on transient server overload (503 UNAVAILABLE) with increasing
+    backoff before giving up.
+    """
+
+    last_error = None
+
+    for attempt in range(1, MAX_RETRIES + 1):
+
+        try:
+            return client.models.generate_content(
+                model=MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.0,
+                ),
+            )
+
+        except Exception as e:
+            last_error = e
+            error_text = str(e)
+            is_overload = "503" in error_text or "UNAVAILABLE" in error_text
+
+            if is_overload and attempt < MAX_RETRIES:
+                wait_time = RETRY_BASE_DELAY_SECONDS * attempt
+                print(
+                    f"[speaker_naming] Model overloaded (attempt "
+                    f"{attempt}/{MAX_RETRIES}), retrying in "
+                    f"{wait_time:.0f}s..."
+                )
+                time.sleep(wait_time)
+                continue
+
+            raise last_error
+
+    raise last_error
 
 
 def map_speakers(
@@ -280,13 +326,7 @@ If a name cannot be reliably identified, use:
             f"({MODEL}) to identify speakers..."
         )
 
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.0,
-            ),
-        )
+        response = _call_gemini_with_retry(prompt)
 
         response_text = getattr(
             response,

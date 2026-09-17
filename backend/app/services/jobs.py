@@ -1,3 +1,4 @@
+
 from datetime import datetime, timezone
 
 from app.db.session import SessionLocal
@@ -23,6 +24,7 @@ from app.services.memory.vector_store import (
 )
 
 
+
 # ============================================================
 # MEETING PROCESSING
 # ============================================================
@@ -32,16 +34,15 @@ def process_meeting(job_id: int):
     VESTIGE AI: Meeting processing pipeline.
 
     Flow:
-
         Audio
           ↓
         Gemini 3.5 Transcribe
           ↓
         Automatic speaker diarization
           ↓
-        Gemini transcript verification
-          ↓
         Gemini speaker-name identification
+          ↓
+        Save detected speaker names to Meeting.participants
           ↓
         Save DialogueTurn
           ↓
@@ -56,8 +57,7 @@ def process_meeting(job_id: int):
         Qdrant
 
     Important:
-
-        - No Groq
+        - No Groq transcription
         - No AssemblyAI
         - No translation
         - Original Urdu/English/code-switching preserved
@@ -65,7 +65,6 @@ def process_meeting(job_id: int):
     """
 
     db = SessionLocal()
-
     job = None
 
     try:
@@ -95,7 +94,6 @@ def process_meeting(job_id: int):
         )
 
         if not meeting:
-
             raise ValueError(
                 f"Meeting {job.meeting_id} not found."
             )
@@ -111,7 +109,7 @@ def process_meeting(job_id: int):
         job.status = "processing"
         job.progress = 5
         job.error_message = None
-
+        job.started_at = datetime.now(timezone.utc)
         db.commit()
 
         # =====================================================
@@ -134,15 +132,9 @@ def process_meeting(job_id: int):
         # -----------------------------------------------------
 
         if duration is not None:
-
             try:
-
-                meeting.duration_seconds = int(
-                    duration
-                )
-
+                meeting.duration_seconds = int(duration)
             except Exception:
-
                 meeting.duration_seconds = 0
 
         print(
@@ -151,13 +143,11 @@ def process_meeting(job_id: int):
         )
 
         if not segments:
-
             raise ValueError(
                 "Gemini returned no transcription segments."
             )
 
         job.progress = 40
-
         db.commit()
 
         # =====================================================
@@ -165,13 +155,20 @@ def process_meeting(job_id: int):
         # =====================================================
 
         print(
-            "[JOBS] Identifying speaker names with Gemini..."
+            "[JOBS] Identifying speaker names..."
         )
+
+        # Keep the original participants as candidates/input
+        # for the speaker naming system.
+        original_participants = (
+            meeting.participants
+            or ""
+        ).strip()
 
         speaker_mapping = map_speakers(
             db,
             segments,
-            meeting.participants,
+            original_participants,
         )
 
         print(
@@ -179,8 +176,74 @@ def process_meeting(job_id: int):
             f"{speaker_mapping}"
         )
 
-        job.progress = 55
+        # =====================================================
+        # 5B. SAVE DETECTED SPEAKER NAMES TO MEETING
+        # =====================================================
 
+        """
+        IMPORTANT:
+
+        Previously, the frontend was showing detected names
+        because meeting_response() was dynamically reading
+        DialogueTurn.
+
+        But Meeting.participants in SQL Server still contained
+        the names entered manually during upload.
+
+        This block permanently updates:
+
+            Meeting.participants
+
+        with the names returned by speaker_mapping.
+        """
+
+        detected_speaker_names = []
+
+        if isinstance(speaker_mapping, dict):
+
+            for speaker_label, speaker_info in speaker_mapping.items():
+
+                if not isinstance(speaker_info, dict):
+                    continue
+
+                detected_name = (
+                    speaker_info.get("name")
+                    or ""
+                ).strip()
+
+                if not detected_name:
+                    continue
+
+                # Avoid duplicate names.
+                if detected_name not in detected_speaker_names:
+                    detected_speaker_names.append(
+                        detected_name
+                    )
+
+        if detected_speaker_names:
+
+            meeting.participants = ", ".join(
+                detected_speaker_names
+            )
+
+            db.commit()
+            db.refresh(meeting)
+
+            print(
+                "[JOBS] Meeting participants updated "
+                "with detected speaker names: "
+                f"{meeting.participants}"
+            )
+
+        else:
+
+            print(
+                "[JOBS] No detected speaker names returned. "
+                "Keeping existing participants: "
+                f"{meeting.participants}"
+            )
+
+        job.progress = 55
         db.commit()
 
         # =====================================================
@@ -206,9 +269,7 @@ def process_meeting(job_id: int):
         # =====================================================
 
         readable_transcript = []
-
         rag_turns = []
-
         saved_turn_count = 0
 
         for i, seg in enumerate(segments):
@@ -231,9 +292,13 @@ def process_meeting(job_id: int):
                 {},
             )
 
+            if not isinstance(speaker_info, dict):
+                speaker_info = {}
+
             speaker_name = (
                 speaker_info.get("name")
-            )
+                or ""
+            ).strip()
 
             # -------------------------------------------------
             # Final fallback
@@ -241,25 +306,21 @@ def process_meeting(job_id: int):
 
             if not speaker_name:
 
-                # IMPORTANT:
-                # Don't use i + 1 here.
-                # i is the segment number, not speaker number.
-
                 existing_speaker_numbers = []
 
                 for mapping in speaker_mapping.values():
 
-                    name = mapping.get(
-                        "name",
-                        "",
-                    )
+                    if not isinstance(mapping, dict):
+                        continue
 
-                    if name.lower().startswith(
-                        "speaker "
-                    ):
+                    name = (
+                        mapping.get("name")
+                        or ""
+                    ).strip()
+
+                    if name.lower().startswith("speaker "):
 
                         try:
-
                             number = int(
                                 name.split()[-1]
                             )
@@ -274,7 +335,6 @@ def process_meeting(job_id: int):
                 next_number = 1
 
                 while next_number in existing_speaker_numbers:
-
                     next_number += 1
 
                 speaker_name = (
@@ -291,7 +351,6 @@ def process_meeting(job_id: int):
             ).strip()
 
             if not original_text:
-
                 continue
 
             # -------------------------------------------------
@@ -309,23 +368,17 @@ def process_meeting(job_id: int):
             )
 
             try:
-
                 start_time = float(
                     start_time or 0.0
                 )
-
             except Exception:
-
                 start_time = 0.0
 
             try:
-
                 end_time = float(
                     end_time or 0.0
                 )
-
             except Exception:
-
                 end_time = 0.0
 
             # -------------------------------------------------
@@ -333,13 +386,9 @@ def process_meeting(job_id: int):
             # -------------------------------------------------
 
             turn = DialogueTurn(
-
                 meeting_id=meeting.id,
-
                 turn_order=i,
-
                 speaker_label=speaker_label,
-
                 speaker_name=speaker_name,
 
                 # ---------------------------------------------
@@ -359,7 +408,6 @@ def process_meeting(job_id: int):
                 # ---------------------------------------------
 
                 start_time=start_time,
-
                 end_time=end_time,
             )
 
@@ -378,11 +426,6 @@ def process_meeting(job_id: int):
 
             # -------------------------------------------------
             # RAG
-            #
-            # IMPORTANT:
-            # We use ORIGINAL text.
-            #
-            # There is currently no translation.
             # -------------------------------------------------
 
             rag_turns.append(
@@ -397,7 +440,6 @@ def process_meeting(job_id: int):
         )
 
         if saved_turn_count == 0:
-
             raise ValueError(
                 "No valid dialogue turns were produced."
             )
@@ -421,11 +463,10 @@ def process_meeting(job_id: int):
         )
 
         job.progress = 65
-
         db.commit()
 
         # =====================================================
-        # 8b. GENERATE MEETING SUMMARY
+        # 8B. GENERATE MEETING SUMMARY
         # =====================================================
 
         print(
@@ -450,7 +491,6 @@ def process_meeting(job_id: int):
         db.commit()
 
         job.progress = 70
-
         db.commit()
 
         # =====================================================
@@ -479,7 +519,6 @@ def process_meeting(job_id: int):
             )
 
             job.progress = 75
-
             db.commit()
 
             # =================================================
@@ -496,13 +535,11 @@ def process_meeting(job_id: int):
             )
 
             if not vectors:
-
                 raise ValueError(
                     "Embedding model returned no vectors."
                 )
 
             if len(vectors) != len(chunks):
-
                 raise ValueError(
                     "Number of vectors does not match "
                     "number of chunks."
@@ -532,13 +569,9 @@ def process_meeting(job_id: int):
             )
 
             store_chunks(
-
                 document_id=document_id,
-
                 chunks=chunks,
-
                 vectors=vectors,
-
                 meta={
                     "meeting_id": meeting.id,
                     "project_id": meeting.project_id,
@@ -555,7 +588,6 @@ def process_meeting(job_id: int):
         # =====================================================
 
         job.progress = 100
-
         job.status = "done"
 
         job.finished_at = (
@@ -624,7 +656,6 @@ def process_document(job_id: int):
     VESTIGE AI: Processes uploaded text documents.
 
     Flow:
-
         Document
           ↓
         Read text
@@ -664,7 +695,6 @@ def process_document(job_id: int):
         )
 
         if not doc:
-
             raise ValueError(
                 f"Document {job.document_id} not found."
             )
@@ -675,6 +705,7 @@ def process_document(job_id: int):
 
         job.status = "processing"
         job.progress = 10
+        job.started_at = datetime.now(timezone.utc)
 
         db.commit()
 
@@ -698,7 +729,6 @@ def process_document(job_id: int):
         text = text.strip()
 
         if not text:
-
             raise ValueError(
                 "Document contains no readable text."
             )
@@ -706,7 +736,6 @@ def process_document(job_id: int):
         doc.extracted_text = text
 
         job.progress = 35
-
         db.commit()
 
         # =====================================================
@@ -747,7 +776,6 @@ def process_document(job_id: int):
         )
 
         if not chunks:
-
             raise ValueError(
                 "No chunks generated from document."
             )
@@ -758,7 +786,6 @@ def process_document(job_id: int):
         )
 
         job.progress = 55
-
         db.commit()
 
         # =====================================================
@@ -775,20 +802,17 @@ def process_document(job_id: int):
         )
 
         if not vectors:
-
             raise ValueError(
                 "Embedding model returned no vectors."
             )
 
         if len(vectors) != len(chunks):
-
             raise ValueError(
                 "Number of vectors does not match "
                 "number of document chunks."
             )
 
         job.progress = 75
-
         db.commit()
 
         # =====================================================
@@ -800,13 +824,9 @@ def process_document(job_id: int):
         )
 
         store_chunks(
-
             document_id=doc.id,
-
             chunks=chunks,
-
             vectors=vectors,
-
             meta={
                 "client_id": doc.client_id,
                 "project_id": doc.project_id,
@@ -831,7 +851,6 @@ def process_document(job_id: int):
         # =====================================================
 
         job.status = "done"
-
         job.progress = 100
 
         db.commit()
@@ -889,7 +908,6 @@ def reembed_meeting(meeting_id: int):
     from the UI.
 
     Uses the original transcript.
-
     No translation.
     """
 
@@ -907,7 +925,6 @@ def reembed_meeting(meeting_id: int):
         )
 
         if not meeting:
-
             raise ValueError(
                 f"Meeting {meeting_id} not found."
             )
@@ -955,7 +972,6 @@ def reembed_meeting(meeting_id: int):
             ).strip()
 
             if not original_text:
-
                 continue
 
             turns.append(
@@ -1015,13 +1031,11 @@ def reembed_meeting(meeting_id: int):
         )
 
         if not vectors:
-
             raise ValueError(
                 "Embedding model returned no vectors."
             )
 
         if len(vectors) != len(chunks):
-
             raise ValueError(
                 "Number of vectors does not match "
                 "number of chunks."
@@ -1038,13 +1052,9 @@ def reembed_meeting(meeting_id: int):
         )
 
         store_chunks(
-
             document_id=document_id,
-
             chunks=chunks,
-
             vectors=vectors,
-
             meta={
                 "meeting_id": meeting_id,
                 "project_id": meeting.project_id,
@@ -1068,4 +1078,4 @@ def reembed_meeting(meeting_id: int):
 
     finally:
 
-        db.close()
+        db.close() 

@@ -9,13 +9,13 @@ class Meeting(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(Unicode(300))
-    meeting_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
     client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"), nullable=True)
     audio_path: Mapped[str | None] = mapped_column(Unicode(500), nullable=True)
     transcript: Mapped[str | None] = mapped_column(UnicodeText, nullable=True)
     summary: Mapped[str | None] = mapped_column(UnicodeText, nullable=True)
-    action_items: Mapped[str | None] = mapped_column(UnicodeText, nullable=True)
+    
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     participants: Mapped[str | None] = mapped_column(Unicode(500), nullable=True)
