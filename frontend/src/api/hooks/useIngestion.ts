@@ -10,45 +10,47 @@ import type {
   IngestionJob,
   Document,
   Meeting,
-} from "../../types";
-
-import type {
   SearchResponse,
   AskResponse,
 } from "../../types";
 
+// ============================================================
+// ASK
+// ============================================================
 
-// useIngestion.ts mein useAsk ko is tarah update karein:
 export function useAsk() {
   return useMutation({
     mutationFn: async (args: {
       question: string;
       clientId?: number;
-      projectId?: number; // Yeh line add karein
+      projectId?: number;
     }) => {
       const res = await api.post<AskResponse>("/search/ask", {
         question: args.question,
         client_id: args.clientId,
-        project_id: args.projectId, // Backend property name
+        project_id: args.projectId,
       });
+
       return res.data;
     },
   });
 }
 
-
+// ============================================================
+// SEARCH
+// ============================================================
 
 export function useSearch(
   query: string,
   clientId?: number,
-  projectId?: number // Yeh add kiya
+  projectId?: number
 ) {
   return useQuery({
     queryKey: [
       "search",
       query,
       clientId,
-      projectId, // Query key mein bhi add kiya taake cache sahi rahay
+      projectId,
     ],
 
     queryFn: async () => {
@@ -59,7 +61,7 @@ export function useSearch(
             q: query,
             limit: 10,
             client_id: clientId,
-            project_id: projectId, // Backend ko bheja
+            project_id: projectId,
           },
         }
       );
@@ -68,10 +70,10 @@ export function useSearch(
     },
 
     enabled: query.trim().length >= 3,
+
     staleTime: 60_000,
   });
 }
-
 
 // ============================================================
 // JOBS
@@ -94,26 +96,19 @@ export function useJobs() {
       return res.data;
     },
 
-    refetchInterval: (
-      query
-    ) => {
-      const jobs =
-        query.state.data;
+    refetchInterval: (query) => {
+      const jobs = query.state.data;
 
-      const active =
-        jobs?.some(
-          (job) =>
-            job.status === "pending" ||
-            job.status === "processing"
-        );
+      const active = jobs?.some(
+        (job) =>
+          job.status === "pending" ||
+          job.status === "processing"
+      );
 
-      return active
-        ? 2000
-        : false;
+      return active ? 2000 : false;
     },
   });
 }
-
 
 // ============================================================
 // DOCUMENT UPLOAD
@@ -126,10 +121,8 @@ interface UploadArgs {
   clientId?: number;
 }
 
-
 export function useUpload() {
-  const queryClient =
-    useQueryClient();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({
@@ -138,66 +131,72 @@ export function useUpload() {
       projectId,
       clientId,
     }: UploadArgs) => {
+      const form = new FormData();
 
-      const form =
-        new FormData();
-
-      form.append(
-        "file",
-        file
-      );
+      form.append("file", file);
 
       form.append(
         "source_type",
         sourceType
       );
 
-      if (
-        projectId !== undefined
-      ) {
+      if (projectId !== undefined) {
         form.append(
           "project_id",
           String(projectId)
         );
       }
 
-      if (
-        clientId !== undefined
-      ) {
+      if (clientId !== undefined) {
         form.append(
           "client_id",
           String(clientId)
         );
       }
 
-      const res =
-        await api.post<IngestionJob>(
-          "/ingest/upload",
-          form
-        );
+      /*
+       * IMPORTANT:
+       *
+       * This request must successfully finish before
+       * onSuccess runs.
+       *
+       * If the backend returns an error, this mutation
+       * goes to onError and documents are NOT refreshed.
+       */
+      const res = await api.post<IngestionJob>(
+        "/ingest/upload",
+        form
+      );
 
       return res.data;
     },
 
-    onSuccess: () => {
-      queryClient.invalidateQueries({
+    /*
+     * IMPORTANT:
+     *
+     * Documents are refreshed ONLY after successful
+     * upload response.
+     *
+     * There is NO optimistic document insertion.
+     */
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
         queryKey: ["jobs"],
       });
 
-      queryClient.invalidateQueries({
+      await queryClient.invalidateQueries({
         queryKey: ["documents"],
       });
 
-      queryClient.invalidateQueries({
+      await queryClient.invalidateQueries({
         queryKey: ["dashboard"],
       });
     },
   });
 }
 
-
 // ============================================================
-// AUDIO UPLOAD
+// AUDIO / MEETING UPLOAD
 // ============================================================
 
 interface UploadAudioArgs {
@@ -212,21 +211,89 @@ export function useUploadAudio() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ file, title, participants, projectId, clientId }: UploadAudioArgs) => {
+    mutationFn: async ({
+      file,
+      title,
+      participants,
+      projectId,
+      clientId,
+    }: UploadAudioArgs) => {
       const form = new FormData();
-      form.append("file", file);
-      form.append("title", title);
-      if (participants) form.append("participants", participants);
-      if (projectId) form.append("project_id", String(projectId));
-      if (clientId) form.append("client_id", String(clientId));
 
-      const res = await api.post<IngestionJob>("/ingest/audio", form, { timeout: 300000 });
+      form.append(
+        "file",
+        file
+      );
+
+      form.append(
+        "title",
+        title
+      );
+
+      if (participants) {
+        form.append(
+          "participants",
+          participants
+        );
+      }
+
+      if (projectId !== undefined) {
+        form.append(
+          "project_id",
+          String(projectId)
+        );
+      }
+
+      if (clientId !== undefined) {
+        form.append(
+          "client_id",
+          String(clientId)
+        );
+      }
+
+      /*
+       * 5 minutes timeout.
+       *
+       * The request must successfully finish before
+       * onSuccess runs.
+       *
+       * If upload/conversion fails, mutation fails and
+       * meetings query is NOT invalidated.
+       */
+      const res = await api.post<IngestionJob>(
+        "/ingest/audio",
+        form,
+        {
+          timeout: 300000,
+        }
+      );
+
       return res.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["documents"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"]});
+
+    /*
+     * IMPORTANT:
+     *
+     * Only after successful meeting upload:
+     *
+     * 1. Refresh jobs
+     * 2. Refresh meetings
+     * 3. Refresh dashboard
+     *
+     * There is NO optimistic meeting insertion.
+     */
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["jobs"],
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["meetings"],
+      });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["dashboard"],
+      });
     },
   });
 }
@@ -240,19 +307,22 @@ export function useDocuments() {
     queryKey: ["documents"],
 
     queryFn: async () => {
-      const res =
-        await api.get<Document[]>(
-          "/ingest/documents",
-          {
-            params: {
-              limit: 50,
-            },
-          }
-        );
+      const res = await api.get<Document[]>(
+        "/ingest/documents",
+        {
+          params: {
+            limit: 50,
+          },
+        }
+      );
 
       return res.data;
     },
 
+    /*
+     * Keep refreshing because document processing
+     * can update chunk_count / summary after upload.
+     */
     refetchInterval: 3000,
   });
 }
@@ -278,32 +348,76 @@ export function useMeetings() {
       return res.data;
     },
 
+    /*
+     * This is also important for speaker names.
+     *
+     * Initially:
+     *   participants = manually entered participants
+     *
+     * After transcription:
+     *   participants = detected speaker names
+     *
+     * Because this endpoint is refreshed every 3 seconds,
+     * the UI will automatically show the detected names.
+     */
     refetchInterval: 3000,
   });
 }
 
 // ============================================================
-// SINGLE DOCUMENT / MEETING (for summary modal)
+// SINGLE DOCUMENT
 // ============================================================
 
-export function useDocumentDetail(id: number | null) {
+export function useDocumentDetail(
+  id: number | null
+) {
   return useQuery({
-    queryKey: ["document", id],
+    queryKey: [
+      "document",
+      id,
+    ],
+
     queryFn: async () => {
-      const res = await api.get<Document>(`/ingest/documents/${id}`);
+      const res = await api.get<Document>(
+        `/ingest/documents/${id}`
+      );
+
       return res.data;
     },
+
     enabled: !!id,
   });
 }
 
-export function useMeetingDetail(id: number | null) {
+// ============================================================
+// SINGLE MEETING
+// ============================================================
+
+export function useMeetingDetail(
+  id: number | null
+) {
   return useQuery({
-    queryKey: ["meeting", id],
+    queryKey: [
+      "meeting",
+      id,
+    ],
+
     queryFn: async () => {
-      const res = await api.get<Meeting>(`/ingest/meetings/${id}`);
+      const res = await api.get<Meeting>(
+        `/ingest/meetings/${id}`
+      );
+
       return res.data;
     },
+
     enabled: !!id,
+
+    /*
+     * Meeting processing happens in the background.
+     *
+     * This keeps the opened meeting detail updated
+     * while transcription/summary processing continues.
+     */
+    refetchInterval: 3000,
   });
 }
